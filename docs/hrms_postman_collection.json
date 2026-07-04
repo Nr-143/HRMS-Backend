@@ -151,6 +151,109 @@
 						"description": "Terminate the active session and invalidate the token cached in Redis."
 					},
 					"response": []
+				},
+				{
+					"name": "Forgot Password (Request OTP)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@acme.example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/forgot-password",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"forgot-password"
+							]
+						},
+						"description": "Request a 6-digit password reset OTP to be sent to the user's email address."
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Password with OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@acme.example.com\",\n    \"otp\": \"123456\",\n    \"newPassword\": \"NewSecureAdminPassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/reset-password",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"reset-password"
+							]
+						},
+						"description": "Submit email, 6-digit OTP code, and a new password complying with complexity requirements to reset the account password."
+					},
+					"response": []
+				},
+				{
+					"name": "Change Password (Authenticated)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"currentPassword\": \"AcmeAdminPassword123\",\n    \"newPassword\": \"AnotherNewSecurePassword123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/auth/change-password",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"change-password"
+							]
+						},
+						"description": "Allows an authenticated user to change their password by validating the current password."
+					},
+					"response": []
 				}
 			]
 		},

@@ -329,6 +329,79 @@ This is a server-side session invalidation approach. The JWT itself remains cryp
 
 ---
 
+### Flow 5: Forgot Password (Request OTP) — `POST /api/v1/auth/forgot-password`
+
+**Who can call it:** Anyone (public endpoint, no authentication required).
+
+**What the client sends:**
+
+| Field | Type | Required |
+|-------|------|:--------:|
+| email | string | ✓ |
+
+**What the system does:**
+
+1. Validates input formatting and checks if a user account is registered with the email.
+2. Generates a cryptographically strong, 6-digit numeric OTP code.
+3. Saves the OTP in Redis under the key `otp:forget-password:${email}` with a 5-minute (300-second) TTL.
+4. Dispatches an email notification containing the OTP to the user's address. (Fallback mock log generated in dev environments).
+
+**What the system returns:**
+
+- `email` — The destination email address.
+
+---
+
+### Flow 6: Reset Password with OTP — `POST /api/v1/auth/reset-password`
+
+**Who can call it:** Anyone (public endpoint, no authentication required).
+
+**What the client sends:**
+
+| Field | Type | Required | Rules |
+|-------|------|:--------:|-------|
+| email | string | ✓ | Must be a valid email |
+| otp | string | ✓ | Exactly 6 numeric digits |
+| newPassword | string | ✓ | Min 8 chars, must contain uppercase, number, and special character |
+
+**What the system does:**
+
+1. Fetches the OTP code associated with the email from Redis.
+2. Compares the submitted code with the cached value. If they do not match or if the OTP has expired (over 5 minutes), rejects with `401 Unauthorized`.
+3. Bcrypt-hashes the new password (10 salt rounds) and updates the User record in the database.
+4. Deletes the OTP code from Redis immediately upon success to prevent replay attacks.
+5. Invalidates any cached session token in Redis to force the user to re-authenticate using their new credentials across all devices.
+
+**What the system returns:**
+
+- `null` data with message "Password reset successfully".
+
+---
+
+### Flow 7: Change Password (Authenticated) — `POST /api/v1/auth/change-password`
+
+**Who can call it:** Any authenticated user (requires Bearer token in Authorization header).
+
+**What the client sends:**
+
+| Field | Type | Required | Rules |
+|-------|------|:--------:|-------|
+| currentPassword | string | ✓ | Must match the active password |
+| newPassword | string | ✓ | Min 8 chars, must contain uppercase, number, and special character |
+
+**What the system does:**
+
+1. Fetches the authenticated user profile using the `userId` in `AsyncLocalStorage` context.
+2. Compares `currentPassword` with the stored bcrypt password hash. If mismatch, rejects with `401 Unauthorized`.
+3. Hashes the `newPassword` and saves it to the database.
+4. Evicts the user's active session from the Redis cache (`sess:${userId}`), forcing all existing client instances to prompt for re-authentication.
+
+**What the system returns:**
+
+- `null` data with message "Password changed successfully".
+
+---
+
 ## 11. Context Storage: What Flows Through Every Request
 
 After authentication, the middleware stores the following fields in `AsyncLocalStorage`, making them available to every function in the async call chain without explicit parameter passing:

@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../../config/env.js';
 import { NotFoundError, UnauthorizedError, ConflictError } from '../../utils/error.utils.js';
 import { cache } from '../../utils/cache.utils.js';
+import { sendMail } from '../../utils/mail.utils.js';
 
 class AuthService {
   constructor(prisma, redis) {
@@ -306,6 +307,104 @@ class AuthService {
    */
   async logout(userId) {
     await cache.del(`sess:${userId}`);
+    return true;
+  }
+
+  /**
+   * Request password reset OTP.
+   * Generates a 6-digit numeric OTP, saves it in Redis, and sends it via email.
+   */
+  async forgotPassword(email) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new NotFoundError('No account with this email address exists');
+    }
+
+    // Generate 6-digit numeric OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Store OTP in Redis with a 5-minute (300 seconds) expiration window
+    await this.redis.set(`otp:forget-password:${email}`, otp, {
+      EX: 300,
+    });
+
+    // Send email notification
+    await sendMail({
+      to: email,
+      subject: 'Password Reset OTP - HRMS',
+      text: `Your password reset OTP code is: ${otp}\nThis code is valid for 5 minutes. If you did not request this, please ignore this email.`,
+    });
+
+    return { email };
+  }
+
+  /**
+   * Reset user password using the OTP code.
+   * Validates OTP and updates password.
+   */
+  async resetPassword({ email, otp, newPassword }) {
+    const cachedOtp = await this.redis.get(`otp:forget-password:${email}`);
+
+    if (!cachedOtp || cachedOtp !== otp) {
+      throw new UnauthorizedError('OTP code is invalid or has expired');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password inside DB
+    await this.prisma.user.update({
+      where: { email },
+      data: { password: hashedPassword },
+    });
+
+    // Clean up OTP from Redis
+    await this.redis.del(`otp:forget-password:${email}`);
+
+    // Invalidate active user sessions to force re-authentication
+    await cache.del(`sess:${user.id}`);
+
+    return true;
+  }
+
+  /**
+   * Change user password (authenticated flow).
+   * Validates current password and updates to new password.
+   */
+  async changePassword(userId, { currentPassword, newPassword }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      throw new UnauthorizedError('Incorrect current password');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+
+    // Invalidate active session to force login again
+    await cache.del(`sess:${userId}`);
+
     return true;
   }
 

@@ -12,6 +12,12 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(8, 'JWT_SECRET must be at least 8 characters long').default('hrms-super-secret-key-change-me-in-production'),
   JWT_EXPIRES_IN: z.string().default('1d'),
   SESSION_TTL: z.coerce.number().default(86400), // Session time-to-live in Redis (seconds)
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM_EMAIL: z.string().email().default('no-reply@hrms.example.com'),
+  SMTP_FROM_NAME: z.string().default('HRMS Support'),
 });
 
 const parsed = envSchema.safeParse(process.env);
