@@ -8,12 +8,15 @@ class LeaveService {
   }
 
   /**
-   * Submit a new leave application. Scoped automatically.
+   * Submit a new leave application. Scoped automatically by tenant and rbac scope filter.
    */
-  async requestLeave({ employeeId, startDate, endDate, type, reason }) {
+  async requestLeave({ employeeId, startDate, endDate, type, reason }, scopeFilter) {
+    // If scope filter restricts employeeId (self-restricted), overwrite to enforce ownership
+    const targetEmployeeId = scopeFilter?.employeeId || employeeId;
+
     // 1. Validate employee presence (scoped to tenant automatically)
     const employee = await this.prisma.employee.findFirst({
-      where: { id: employeeId },
+      where: { id: targetEmployeeId },
     });
 
     if (!employee) {
@@ -29,7 +32,7 @@ class LeaveService {
 
     const leave = await this.prisma.leave.create({
       data: {
-        employeeId,
+        employeeId: targetEmployeeId,
         startDate: start,
         endDate: end,
         type,
@@ -39,22 +42,25 @@ class LeaveService {
     });
 
     // Invalidate employee leave history cache
-    await cache.del(`leaves:employee:${employeeId}`);
+    await cache.del(`leaves:employee:${targetEmployeeId}`);
 
     return leave;
   }
 
   /**
-   * Approve or reject a pending leave application. Scoped automatically.
+   * Approve or reject a pending leave application. Scoped automatically by tenant and rbac scope filter.
    */
-  async reviewLeave(leaveId, status) {
-    // Validate record (scoped to tenant automatically)
+  async reviewLeave(leaveId, status, scopeFilter) {
+    // Validate record (scoped to tenant and authorization scope filter)
     const leave = await this.prisma.leave.findFirst({
-      where: { id: leaveId },
+      where: { 
+        id: leaveId,
+        ...scopeFilter
+      },
     });
 
     if (!leave) {
-      throw new NotFoundError('Leave application record not found');
+      throw new NotFoundError('Leave application record not found or access denied.');
     }
 
     if (leave.status !== 'PENDING') {
@@ -73,15 +79,19 @@ class LeaveService {
   }
 
   /**
-   * Retrieve leave history records for an employee. Scoped automatically.
+   * Retrieve leave history records for an employee. Scoped automatically by tenant and rbac scope filter.
    */
-  async getEmployeeLeaves(employeeId) {
+  async getEmployeeLeaves(employeeId, scopeFilter) {
+    // Verify employee ownership (scoped by tenant and authorization scope filter)
     const employee = await this.prisma.employee.findFirst({
-      where: { id: employeeId },
+      where: { 
+        id: employeeId,
+        ...scopeFilter
+      },
     });
 
     if (!employee) {
-      throw new NotFoundError('Employee not found');
+      throw new NotFoundError('Employee not found or access denied.');
     }
 
     const cacheKey = `leaves:employee:${employeeId}`;
@@ -91,7 +101,10 @@ class LeaveService {
     if (cached) return cached;
 
     const leaves = await this.prisma.leave.findMany({
-      where: { employeeId },
+      where: { 
+        employeeId,
+        ...scopeFilter
+      },
       orderBy: { startDate: 'desc' },
     });
 

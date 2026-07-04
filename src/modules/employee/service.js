@@ -41,14 +41,14 @@ class EmployeeService {
   /**
    * Update employee details. TenantId is automatically checked by the extension.
    */
-  async updateEmployee(id, { firstName, lastName, department }) {
-    // Verify existence (scoped to tenant)
+  async updateEmployee(id, { firstName, lastName, department }, scopeFilter) {
+    // Verify existence (scoped to tenant and user rbac scope)
     const employee = await this.prisma.employee.findFirst({
-      where: { id },
+      where: { id, ...scopeFilter },
     });
 
     if (!employee) {
-      throw new NotFoundError('Employee not found in this company context');
+      throw new NotFoundError('Employee not found or you lack permission to modify this profile.');
     }
 
     const updatedEmployee = await this.prisma.employee.update({
@@ -68,9 +68,9 @@ class EmployeeService {
   }
 
   /**
-   * Retrieve single employee. Scoped automatically.
+   * Retrieve single employee. Scoped automatically by tenant and rbac scope filter.
    */
-  async getEmployeeById(id) {
+  async getEmployeeById(id, scopeFilter) {
     const cacheKey = `employee:${id}`;
     
     // Check tenant-scoped cache
@@ -78,7 +78,7 @@ class EmployeeService {
     if (cached) return cached;
 
     const employee = await this.prisma.employee.findFirst({
-      where: { id },
+      where: { id, ...scopeFilter },
       include: {
         user: {
           select: {
@@ -91,7 +91,7 @@ class EmployeeService {
     });
 
     if (!employee) {
-      throw new NotFoundError('Employee not found');
+      throw new NotFoundError('Employee not found or access denied.');
     }
 
     await cache.set(cacheKey, employee, 600); // 10 min TTL
@@ -99,9 +99,9 @@ class EmployeeService {
   }
 
   /**
-   * Retrieve all employees. Scoped automatically.
+   * Retrieve all employees. Scoped automatically by tenant and rbac scope filter.
    */
-  async getAllEmployees() {
+  async getAllEmployees(scopeFilter) {
     const cacheKey = 'employees:list';
 
     // Check tenant-scoped cache
@@ -109,6 +109,9 @@ class EmployeeService {
     if (cached) return cached;
 
     const employees = await this.prisma.employee.findMany({
+      where: {
+        ...scopeFilter
+      },
       orderBy: { lastName: 'asc' },
     });
 
