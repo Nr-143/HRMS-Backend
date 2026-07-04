@@ -41,7 +41,7 @@ class EmployeeService {
   /**
    * Update employee details. TenantId is automatically checked by the extension.
    */
-  async updateEmployee(id, data) {
+  async updateEmployee(id, { firstName, lastName, department }) {
     // Verify existence (scoped to tenant)
     const employee = await this.prisma.employee.findFirst({
       where: { id },
@@ -53,7 +53,11 @@ class EmployeeService {
 
     const updatedEmployee = await this.prisma.employee.update({
       where: { id },
-      data,
+      data: {
+        firstName,
+        lastName,
+        department,
+      },
     });
 
     // Invalidate caches
