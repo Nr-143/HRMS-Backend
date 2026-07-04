@@ -106,112 +106,45 @@ export const getRole = () => {
 
 ### Authentication Middleware (`src/middleware/auth.middleware.js`)
 
-The middleware verifies the incoming JWT directly, extracts tenant and user properties, and runs downstream route operations within the storage execution context using `contextStorage.run`.
+The middleware verifies the incoming JWT by delegating to the `authService` session verification method, and runs downstream route operations within the storage execution context using `contextStorage.run`.
 
 ```javascript
-import jwt from 'jsonwebtoken';
-import { sendError } from '../utils/response.utils.js';
+import { authService } from '../modules/auth/index.js';
+import { UnauthorizedError } from '../utils/error.utils.js';
 import { contextStorage } from '../utils/context.utils.js';
 
-// PHASE 1: This middleware verifies the JWT and sets AsyncLocalStorage context.
-// PHASE 3 (microservices): Replace this with tenant.middleware.js which reads
-// X-Tenant-ID header instead of verifying JWT. The contextStorage.run() call
-// is identical — only the source of tenantId changes.
-
-export const authenticate = (req, res, next) => {
+export const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    
-    // 1. Extract Bearer token from Authorization header and check format
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'NO_TOKEN',
-          message: 'Access token is missing or malformed'
-        }
-      });
+      throw new UnauthorizedError('Access token is missing or malformed');
     }
 
     const token = authHeader.split(' ')[1];
-    
-    // Use JWT_ACCESS_SECRET from environment (with fallback to JWT_SECRET)
-    const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'hrms-super-secret-key-change-me-in-production';
+    const userPayload = await authService.verifySession(token);
 
-    // 2. Verify token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, secret);
-    } catch (err) {
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: 'TOKEN_EXPIRED',
-            message: 'Access token has expired'
-          }
-        });
-      }
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'INVALID_TOKEN',
-          message: 'Access token is invalid or corrupted'
-        }
-      });
+    // Bind authentication data to Request context
+    req.user = userPayload;
+
+    // Optional safety check: If tenant context is resolved, it must match user tenant context
+    if (req.tenantId && req.tenantId !== userPayload.tenantId) {
+      throw new UnauthorizedError('Cross-tenant data access is forbidden');
     }
 
-    // 3. Attach decoded payload to req.user
-    req.user = decoded;
-
-    // 4. Run subsequent steps within the context Storage
+    // Run subsequent request steps inside AsyncLocalStorage context
     contextStorage.run({
-      tenantId: decoded.tenantId || decoded.companyId,
-      userId: decoded.sub,
-      role: decoded.role,
+      id: userPayload.sub,
+      tenantId: userPayload.tenantId,
+      role: userPayload.role,
     }, () => {
       next();
     });
   } catch (error) {
-    // Fallback error handler
-    return sendError(res, error);
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return next(new UnauthorizedError('Access token has expired or is invalid'));
+    }
+    next(error);
   }
-};
-```
-
-### Tenant Context Middleware (`src/middleware/tenant.middleware.js` - Phase 3 Microservice)
-
-This middleware replaces `auth.middleware.js` in microservices mode to extract verified, trusted headers injected by the API Gateway.
-
-```javascript
-import { contextStorage } from '../utils/context.utils.js';
-
-// This middleware only runs in microservice mode. Never expose microservices directly to the internet — they must sit behind the API Gateway.
-
-export const tenantResolver = (req, res, next) => {
-  const tenantId = req.headers['x-tenant-id'];
-  const userId = req.headers['x-user-id'] || null;
-  const role = req.headers['x-user-role'] || null;
-
-  // 1. Read and validate X-Tenant-ID (must be a non-empty string)
-  if (!tenantId || typeof tenantId !== 'string' || tenantId.trim() === '') {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: 'MISSING_TENANT_CONTEXT',
-        message: 'Request is missing tenant context. Ensure it came through the API Gateway.'
-      }
-    });
-  }
-
-  // 2. Call contextStorage.run to bind request context variables for downstream database and caching actions
-  contextStorage.run({
-    tenantId: tenantId.trim(),
-    userId: userId ? userId.trim() : null,
-    role: role ? role.trim() : null,
-  }, () => {
-    next();
-  });
 };
 ```
 
@@ -460,97 +393,4 @@ class EmployeeService {
     return employees;
   }
 }
-```
-
----
-
-## 8. API Gateway Authentication Middleware (`gateway/middleware/gateway.auth.js`)
-
-In the microservices architecture, the **API Gateway** serves as the security perimeter. It is the **ONLY** place where JWT tokens are validated.
-
-### Key Security Flow
-1. **Header Stripping**: The gateway strips any client-provided `x-tenant-id`, `x-user-id`, `x-user-role`, `x-employee-id`, or `x-internal-token` headers to prevent context-spoofing attacks.
-2. **JWT Verification**: It extracts and validates the Bearer token from the `Authorization` header.
-3. **Header Injection**: It extracts the claims from the verified JWT and sets trusted, internal HTTP headers for downstream routing.
-4. **Distributed Tracing**: It injects a unique trace ID `x-request-id` to identify and trace the request's execution flow across multiple microservices.
-
-```javascript
-const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
-
-/**
- * API Gateway Authentication Middleware
- * 
- * JWT is verified HERE and ONLY HERE. Downstream services trust headers, never JWT.
- */
-const gatewayAuth = (req, res, next) => {
-  try {
-    // Step 1: Strip all internal headers from the client request (Security)
-    // Always strip before inject — order matters for security.
-    delete req.headers['x-tenant-id'];
-    delete req.headers['x-user-id'];
-    delete req.headers['x-user-role'];
-    delete req.headers['x-employee-id'];
-    delete req.headers['x-internal-token'];
-
-    // Step 2: Extract and verify JWT
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'NO_TOKEN',
-          message: 'Access token is missing or malformed'
-        }
-      });
-    }
-
-    const token = authHeader.split(' ')[1];
-    const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'hrms-super-secret-key-change-me-in-production';
-
-    let decoded;
-    try {
-      decoded = jwt.verify(token, secret);
-    } catch (err) {
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: 'TOKEN_EXPIRED',
-            message: 'Access token has expired'
-          }
-        });
-      }
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'INVALID_TOKEN',
-          message: 'Access token is invalid or corrupted'
-        }
-      });
-    }
-
-    // Step 3: Inject trusted internal headers
-    req.headers['x-tenant-id'] = decoded.tenantId;
-    req.headers['x-user-id'] = decoded.sub;
-    req.headers['x-user-role'] = decoded.role;
-    req.headers['x-employee-id'] = decoded.employeeId || null;
-
-    // Step 4: Add a request trace ID for log tracing
-    req.headers['x-request-id'] = req.headers['x-request-id'] || uuidv4();
-
-    // Step 5: Proceed to downstream proxies
-    next();
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'GATEWAY_ERROR',
-        message: 'Internal Gateway Error'
-      }
-    });
-  }
-};
-
-module.exports = gatewayAuth;
 ```

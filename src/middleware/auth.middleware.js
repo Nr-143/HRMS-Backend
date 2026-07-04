@@ -1,68 +1,42 @@
-import jwt from 'jsonwebtoken';
-import { sendError } from '../utils/response.utils.js';
+import { authService } from '../modules/auth/index.js';
+import { UnauthorizedError } from '../utils/error.utils.js';
 import { contextStorage } from '../utils/context.utils.js';
 
-// PHASE 1: This middleware verifies the JWT and sets AsyncLocalStorage context.
-// PHASE 3 (microservices): Replace this with tenant.middleware.js which reads
-// X-Tenant-ID header instead of verifying JWT. The contextStorage.run() call
-// is identical — only the source of tenantId changes.
-
-export const authenticate = (req, res, next) => {
+/**
+ * Middleware to enforce JWT session validation.
+ * Delegates the verification process directly to the Auth module facade.
+ */
+export const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    
-    // 1. Extract Bearer token from Authorization header and check format
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'NO_TOKEN',
-          message: 'Access token is missing or malformed'
-        }
-      });
+      throw new UnauthorizedError('Access token is missing or malformed');
     }
 
     const token = authHeader.split(' ')[1];
-    
-    // Use JWT_ACCESS_SECRET from environment (with fallback to JWT_SECRET)
-    const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'hrms-super-secret-key-change-me-in-production';
+    const userPayload = await authService.verifySession(token);
 
-    // 2. Verify token
-    let decoded;
-    try {
-      decoded = jwt.verify(token, secret);
-    } catch (err) {
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: 'TOKEN_EXPIRED',
-            message: 'Access token has expired'
-          }
-        });
-      }
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: 'INVALID_TOKEN',
-          message: 'Access token is invalid or corrupted'
-        }
-      });
+    // Bind authentication data to Request context
+    req.user = userPayload;
+
+    // Optional safety check: If tenant context is resolved, it must match user tenant context
+    if (req.tenantId && req.tenantId !== userPayload.tenantId) {
+      throw new UnauthorizedError('Cross-tenant data access is forbidden');
     }
 
-    // 3. Attach decoded payload to req.user
-    req.user = decoded;
-
-    // 4. Run subsequent steps within the context Storage
+    // Run subsequent request steps inside AsyncLocalStorage context
     contextStorage.run({
-      tenantId: decoded.tenantId || decoded.companyId,
-      userId: decoded.sub,
-      role: decoded.role,
+      id: userPayload.sub,
+      tenantId: userPayload.tenantId,
+      role: userPayload.role,
     }, () => {
       next();
     });
   } catch (error) {
-    // Fallback error handler
-    return sendError(res, error);
+    // Catch JSON Web Token errors and wrap them in a standard UnauthorizedError
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return next(new UnauthorizedError('Access token has expired or is invalid'));
+    }
+    next(error);
   }
 };
