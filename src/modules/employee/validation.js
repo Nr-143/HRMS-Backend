@@ -4,7 +4,13 @@ export const createEmployeeSchema = z.object({
   body: z.object({
     firstName: z.string().min(1, 'First name is required'),
     lastName: z.string().min(1, 'Last name is required'),
-    department: z.string().min(1, 'Department is required').optional(),
+    employeeCode: z.string().min(1, 'Employee code is required'),
+    dateOfJoining: z.string().refine((val) => !isNaN(Date.parse(val)), {
+      message: 'Date of joining must be a valid date format',
+    }),
+    phone: z.string().optional(),
+    departmentId: z.string().uuid('Invalid Department ID format'),
+    designationId: z.string().uuid('Invalid Designation ID format'),
     email: z.string().email('Invalid user email').optional(), // Optional link to User login account
   }),
 });
@@ -16,7 +22,10 @@ export const updateEmployeeSchema = z.object({
   body: z.object({
     firstName: z.string().min(1, 'First name cannot be empty').optional(),
     lastName: z.string().min(1, 'Last name cannot be empty').optional(),
-    department: z.string().min(1, 'Department cannot be empty').optional(),
+    phone: z.string().optional(),
+    departmentId: z.string().uuid('Invalid Department ID format').optional(),
+    designationId: z.string().uuid('Invalid Designation ID format').optional(),
+    isActive: z.boolean().optional(),
   }),
 });
 

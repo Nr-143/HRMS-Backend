@@ -10,7 +10,7 @@ class EmployeeService {
   /**
    * Create an employee. TenantId is automatically injected by the Prisma Client Extension.
    */
-  async createEmployee({ firstName, lastName, department, email }) {
+  async createEmployee({ firstName, lastName, departmentId, designationId, employeeCode, dateOfJoining, phone, email }) {
     let userId = null;
 
     if (email) {
@@ -27,7 +27,11 @@ class EmployeeService {
       data: {
         firstName,
         lastName,
-        department,
+        employeeCode,
+        dateOfJoining: new Date(dateOfJoining),
+        phone,
+        departmentId,
+        designationId,
         userId,
       },
     });
@@ -41,7 +45,7 @@ class EmployeeService {
   /**
    * Update employee details. TenantId is automatically checked by the extension.
    */
-  async updateEmployee(id, { firstName, lastName, department }, scopeFilter) {
+  async updateEmployee(id, { firstName, lastName, departmentId, designationId, phone, isActive }, scopeFilter) {
     // Verify existence (scoped to tenant and user rbac scope)
     const employee = await this.prisma.employee.findFirst({
       where: { id, ...scopeFilter },
@@ -56,7 +60,10 @@ class EmployeeService {
       data: {
         firstName,
         lastName,
-        department,
+        departmentId,
+        designationId,
+        phone,
+        isActive,
       },
     });
 

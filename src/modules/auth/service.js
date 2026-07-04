@@ -27,10 +27,30 @@ class AuthService {
 
     // Perform transaction to onboard tenant and user atomically
     const result = await this.prisma.$transaction(async (tx) => {
+      const trialEndsAt = new Date();
+      trialEndsAt.setDate(trialEndsAt.getDate() + 14);
+
       const tenant = await tx.tenant.create({
         data: {
           name: companyName,
           domain,
+          trialEndsAt,
+        },
+      });
+
+      // Create initial default administration department
+      const department = await tx.department.create({
+        data: {
+          name: 'Administration',
+          tenantId: tenant.id,
+        },
+      });
+
+      // Create initial default administrator designation
+      const designation = await tx.designation.create({
+        data: {
+          name: 'Administrator',
+          tenantId: tenant.id,
         },
       });
 
@@ -47,6 +67,10 @@ class AuthService {
         data: {
           firstName,
           lastName,
+          employeeCode: 'EMP-001',
+          dateOfJoining: new Date(),
+          departmentId: department.id,
+          designationId: designation.id,
           userId: user.id,
           tenantId: tenant.id,
         },
