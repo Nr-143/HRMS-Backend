@@ -27,8 +27,10 @@ export const authenticate = async (req, res, next) => {
     // Run subsequent request steps inside AsyncLocalStorage context
     contextStorage.run({
       id: userPayload.sub,
+      userId: userPayload.sub,
       tenantId: userPayload.tenantId,
       role: userPayload.role,
+      employeeId: userPayload.employeeId || null,
     }, () => {
       next();
     });

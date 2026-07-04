@@ -166,9 +166,20 @@ class AuthService {
       throw new UnauthorizedError('Invalid email or password');
     }
 
-    // Sign JWT
+    // Retrieve associated employeeId if one exists
+    const employee = await this.prisma.employee.findFirst({
+      where: { userId: user.id },
+    });
+    const employeeId = employee ? employee.id : null;
+
+    // Sign JWT with employeeId, tenantId, and role
     const token = jwt.sign(
-      { sub: user.id, tenantId: user.tenantId, role: user.role },
+      {
+        sub: user.id,
+        tenantId: user.tenantId,
+        role: user.role,
+        employeeId,
+      },
       env.JWT_SECRET,
       { expiresIn: env.JWT_EXPIRES_IN }
     );
@@ -183,6 +194,7 @@ class AuthService {
         email: user.email,
         role: user.role,
         tenantId: user.tenantId,
+        employeeId,
       },
     };
   }
