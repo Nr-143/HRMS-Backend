@@ -461,3 +461,96 @@ class EmployeeService {
   }
 }
 ```
+
+---
+
+## 8. API Gateway Authentication Middleware (`gateway/middleware/gateway.auth.js`)
+
+In the microservices architecture, the **API Gateway** serves as the security perimeter. It is the **ONLY** place where JWT tokens are validated.
+
+### Key Security Flow
+1. **Header Stripping**: The gateway strips any client-provided `x-tenant-id`, `x-user-id`, `x-user-role`, `x-employee-id`, or `x-internal-token` headers to prevent context-spoofing attacks.
+2. **JWT Verification**: It extracts and validates the Bearer token from the `Authorization` header.
+3. **Header Injection**: It extracts the claims from the verified JWT and sets trusted, internal HTTP headers for downstream routing.
+4. **Distributed Tracing**: It injects a unique trace ID `x-request-id` to identify and trace the request's execution flow across multiple microservices.
+
+```javascript
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+
+/**
+ * API Gateway Authentication Middleware
+ * 
+ * JWT is verified HERE and ONLY HERE. Downstream services trust headers, never JWT.
+ */
+const gatewayAuth = (req, res, next) => {
+  try {
+    // Step 1: Strip all internal headers from the client request (Security)
+    // Always strip before inject — order matters for security.
+    delete req.headers['x-tenant-id'];
+    delete req.headers['x-user-id'];
+    delete req.headers['x-user-role'];
+    delete req.headers['x-employee-id'];
+    delete req.headers['x-internal-token'];
+
+    // Step 2: Extract and verify JWT
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'NO_TOKEN',
+          message: 'Access token is missing or malformed'
+        }
+      });
+    }
+
+    const token = authHeader.split(' ')[1];
+    const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'hrms-super-secret-key-change-me-in-production';
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, secret);
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'TOKEN_EXPIRED',
+            message: 'Access token has expired'
+          }
+        });
+      }
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'INVALID_TOKEN',
+          message: 'Access token is invalid or corrupted'
+        }
+      });
+    }
+
+    // Step 3: Inject trusted internal headers
+    req.headers['x-tenant-id'] = decoded.tenantId;
+    req.headers['x-user-id'] = decoded.sub;
+    req.headers['x-user-role'] = decoded.role;
+    req.headers['x-employee-id'] = decoded.employeeId || null;
+
+    // Step 4: Add a request trace ID for log tracing
+    req.headers['x-request-id'] = req.headers['x-request-id'] || uuidv4();
+
+    // Step 5: Proceed to downstream proxies
+    next();
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'GATEWAY_ERROR',
+        message: 'Internal Gateway Error'
+      }
+    });
+  }
+};
+
+module.exports = gatewayAuth;
+```
