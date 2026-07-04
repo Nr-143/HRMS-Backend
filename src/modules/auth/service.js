@@ -11,83 +11,93 @@ class AuthService {
   }
 
   /**
-   * Onboard a new Tenant and create the admin user / employee profile
+   * Register a new Tenant with subscription trial and Admin user atomically.
    */
-  async registerTenant({ companyName, domain, email, password, firstName, lastName }) {
-    // Check if user already exists
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email },
-    });
+  async register({ companyName, email, password }) {
+    try {
+      const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      const hashedPassword = await bcrypt.hash(password, 10);
 
-    if (existingUser) {
-      throw new ConflictError('A user with this email address already exists');
-    }
+      // Perform transaction to onboard tenant and user atomically
+      const result = await this.prisma.$transaction(async (tx) => {
+        const tenant = await tx.tenant.create({
+          data: {
+            name: companyName,
+            subscriptionStatus: 'TRIAL',
+            plan: 'FREE',
+            trialEndsAt,
+            planExpiresAt: null,
+            maxEmployees: 5,
+          },
+        });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+        const user = await tx.user.create({
+          data: {
+            email,
+            password: hashedPassword,
+            role: 'ADMIN',
+            tenantId: tenant.id,
+            isActive: true,
+          },
+        });
 
-    // Perform transaction to onboard tenant and user atomically
-    const result = await this.prisma.$transaction(async (tx) => {
-      const trialEndsAt = new Date();
-      trialEndsAt.setDate(trialEndsAt.getDate() + 14);
-
-      const tenant = await tx.tenant.create({
-        data: {
-          name: companyName,
-          domain,
-          trialEndsAt,
-        },
+        return { tenant, user };
       });
 
-      // Create initial default administration department
-      const department = await tx.department.create({
-        data: {
-          name: 'Administration',
-          tenantId: tenant.id,
-        },
-      });
-
-      // Create initial default administrator designation
-      const designation = await tx.designation.create({
-        data: {
-          name: 'Administrator',
-          tenantId: tenant.id,
-        },
-      });
-
-      const user = await tx.user.create({
-        data: {
-          email,
-          password: hashedPassword,
+      // Generate accessToken
+      const accessToken = jwt.sign(
+        {
+          sub: result.user.id,
+          tenantId: result.tenant.id,
           role: 'ADMIN',
-          tenantId: tenant.id,
+          employeeId: null,
+          subscriptionStatus: 'TRIAL',
+          plan: 'FREE',
+          trialEndsAt: result.tenant.trialEndsAt.toISOString(),
         },
+        env.JWT_SECRET,
+        { expiresIn: env.JWT_EXPIRES_IN }
+      );
+
+      // Generate refreshToken
+      const refreshToken = jwt.sign(
+        { sub: result.user.id },
+        env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      // Store in Redis as: refresh:{user.id} with TTL 7 days
+      await this.redis.set(`refresh:${result.user.id}`, refreshToken, {
+        EX: 7 * 24 * 60 * 60,
       });
 
-      const employee = await tx.employee.create({
-        data: {
-          firstName,
-          lastName,
-          employeeCode: 'EMP-001',
-          dateOfJoining: new Date(),
-          departmentId: department.id,
-          designationId: designation.id,
-          userId: user.id,
-          tenantId: tenant.id,
+      return {
+        accessToken,
+        refreshToken,
+        tenant: {
+          id: result.tenant.id,
+          name: result.tenant.name,
+          subscriptionStatus: result.tenant.subscriptionStatus,
+          plan: result.tenant.plan,
+          trialEndsAt: result.tenant.trialEndsAt,
         },
-      });
-
-      return { tenant, user, employee };
-    });
-
-    return {
-      tenantId: result.tenant.id,
-      companyName: result.tenant.name,
-      adminUser: {
-        id: result.user.id,
-        email: result.user.email,
-        role: result.user.role,
-      },
-    };
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          role: result.user.role,
+        },
+      };
+    } catch (error) {
+      // Handle unique email constraint error from Prisma (P2002)
+      if (error.code === 'P2002') {
+        throw {
+          status: 409,
+          code: 'EMAIL_EXISTS',
+          message: 'An account with this email already exists',
+        };
+      }
+      throw error;
+    }
   }
 
   /**

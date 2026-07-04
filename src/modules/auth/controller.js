@@ -3,7 +3,7 @@ import { sendSuccess } from '../../utils/response.utils.js';
 
 export const registerTenant = async (req, res, next) => {
   try {
-    const result = await authService.registerTenant(req.body);
+    const result = await authService.register(req.body);
     sendSuccess(res, result, 'Tenant registered successfully', 201);
   } catch (error) {
     next(error);
