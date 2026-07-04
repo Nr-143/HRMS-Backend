@@ -218,6 +218,90 @@ class AuthService {
   }
 
   /**
+   * Fetch the full profile for the authenticated user.
+   * Returns user details, employee profile, department, designation, and tenant info.
+   */
+  async getProfile(userId) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isOwner: true,
+        isActive: true,
+        createdAt: true,
+        tenant: {
+          select: {
+            id: true,
+            name: true,
+            domain: true,
+            subscriptionStatus: true,
+            plan: true,
+            trialEndsAt: true,
+            maxEmployees: true,
+          },
+        },
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            employeeCode: true,
+            phone: true,
+            dateOfJoining: true,
+            isActive: true,
+            department: {
+              select: { id: true, name: true },
+            },
+            designation: {
+              select: { id: true, name: true },
+            },
+            manager: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                employeeCode: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedError('User not found');
+    }
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        isOwner: user.isOwner,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+      },
+      employee: user.employee
+        ? {
+            id: user.employee.id,
+            firstName: user.employee.firstName,
+            lastName: user.employee.lastName,
+            employeeCode: user.employee.employeeCode,
+            phone: user.employee.phone,
+            dateOfJoining: user.employee.dateOfJoining,
+            isActive: user.employee.isActive,
+            department: user.employee.department,
+            designation: user.employee.designation,
+            manager: user.employee.manager,
+          }
+        : null,
+      tenant: user.tenant,
+    };
+  }
+
+  /**
    * Log out user and delete cached session from Redis
    */
   async logout(userId) {

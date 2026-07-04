@@ -30,8 +30,8 @@ export const logout = async (req, res, next) => {
 };
 export const getSessionProfile = async (req, res, next) => {
   try {
-    // Return decoded token info for checks
-    sendSuccess(res, req.user, 'Active session profiles fetched', 200);
+    const profile = await authService.getProfile(req.user.sub);
+    sendSuccess(res, profile, 'Profile fetched successfully', 200);
   } catch (error) {
     next(error);
   }
