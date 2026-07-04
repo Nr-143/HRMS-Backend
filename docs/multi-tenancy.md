@@ -42,10 +42,10 @@ model Employee {
   isActive       Boolean       @default(true)
   userId         String?       @unique
   user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  departmentId   String
-  department     Department    @relation(fields: [departmentId], references: [id])
-  designationId  String
-  designation    Designation   @relation(fields: [designationId], references: [id])
+  departmentId   String?
+  department     Department?   @relation(fields: [departmentId], references: [id])
+  designationId  String?
+  designation    Designation?  @relation(fields: [designationId], references: [id])
   managerId      String?
   manager        Employee?     @relation("Reports", fields: [managerId], references: [id])
   reportees      Employee[]    @relation("Reports")
