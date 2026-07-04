@@ -12,34 +12,43 @@ const prisma = prismaRaw.$extends({
       async $allOperations({ model, operation, args, query }) {
         const context = getContext();
 
-        // 1. If there's no active user session, bypass the filter
+        // 1. Bypass tenant filtering if there's no active request context (e.g. signup, login, health checks)
         if (!context || !context.tenantId) {
           return query(args);
         }
 
-        // 2. If the user is a platform SUPER_ADMIN, bypass the filter
+        // 2. Bypass tenant filtering if the user is a platform SUPER_ADMIN (allows querying across all tenants)
         if (context.role === 'SUPER_ADMIN') {
           return query(args);
         }
 
-        // 3. For reading operations, inject tenantId filter
+        // 3. Do not intercept findUnique. Log a warning and proceed without modifications.
+        // findUnique only accepts unique identifier structures in "where" and will error if non-unique fields like tenantId are injected.
+        // Developers are instructed to use findFirst instead for multi-tenant scoped lookups.
+        if (operation === 'findUnique') {
+          console.warn(`[Prisma Warning]: findUnique was called on model "${model}". It bypasses multi-tenant scoping. Use findFirst instead.`);
+          return query(args);
+        }
+
+        // 4. Scoping for read operations: Inject tenantId filter into where clause
         if (['findFirst', 'findFirstOrThrow', 'findMany', 'count', 'aggregate', 'groupBy'].includes(operation)) {
           args.where = args.where || {};
           args.where.tenantId = context.tenantId;
         }
 
-        // 4. For writing/deleting operations, inject tenantId filter
+        // 5. Scoping for write/delete operations: Inject tenantId filter into where clause to restrict modification/deletion
         if (['update', 'updateMany', 'delete', 'deleteMany'].includes(operation)) {
           args.where = args.where || {};
           args.where.tenantId = context.tenantId;
         }
 
-        // 5. For creation operations, inject tenantId field
+        // 6. Scoping for create operations: Inject tenantId into data object to bind entity to the active tenant
         if (operation === 'create') {
           args.data = args.data || {};
           args.data.tenantId = context.tenantId;
         }
 
+        // 7. Scoping for batch create operations: Inject tenantId into all item objects inside the data array
         if (operation === 'createMany') {
           if (Array.isArray(args.data)) {
             args.data = args.data.map((item) => ({
@@ -51,7 +60,7 @@ const prisma = prismaRaw.$extends({
           }
         }
 
-        // 6. For upsert operations, inject tenantId field
+        // 8. Scoping for upsert operations: Inject tenantId into where filter, create payload, and update payload
         if (operation === 'upsert') {
           args.where = args.where || {};
           args.where.tenantId = context.tenantId;
