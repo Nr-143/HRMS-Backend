@@ -32,11 +32,27 @@ class AuthService {
           },
         });
 
+        // Auto-create default department and designation (greytHR pattern)
+        const department = await tx.department.create({
+          data: {
+            name: 'Management',
+            tenantId: tenant.id,
+          },
+        });
+
+        const designation = await tx.designation.create({
+          data: {
+            name: 'Administrator',
+            tenantId: tenant.id,
+          },
+        });
+
         const user = await tx.user.create({
           data: {
             email,
             password: hashedPassword,
-            role: 'ADMIN',
+            role: 'OWNER_ADMIN',
+            isOwner: true,
             tenantId: tenant.id,
             isActive: true,
           },
@@ -61,6 +77,8 @@ class AuthService {
             employeeCode: generatedCode,
             userId: user.id,
             tenantId: tenant.id,
+            departmentId: department.id,
+            designationId: designation.id,
             dateOfJoining: new Date(),
             managerId: null,
             isActive: true,
@@ -75,7 +93,7 @@ class AuthService {
         {
           sub: result.user.id,
           tenantId: result.tenant.id,
-          role: 'ADMIN',
+          role: result.user.role,
           employeeId: result.employee.id,
           subscriptionStatus: 'TRIAL',
           plan: 'FREE',

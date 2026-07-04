@@ -1,415 +1,197 @@
-# Multi-Tenancy Strategy: Shared Database with Row-Level Isolation
+# Multi-Tenancy & Role Architecture
 
-This document outlines the multi-tenancy strategy implemented in the HRMS backend. It details how the tenant context (`tenantId` / `companyId`) is isolated at the database, middleware, query wrapper, and caching layers to prevent cross-tenant data leaks, while still accommodating administrative access.
-
----
-
-## 1. Schema Design & Query Separation
-
-In a **shared schema, row-level isolation** model, all tenant data resides in the same database tables. To segregate this data, every model representing tenant-specific resources contains a `tenantId` column referencing the `Tenant` table.
-
-### Prisma Schema Definition (`prisma/schema.prisma` snippet)
-
-```prisma
-model Tenant {
-  id                 String             @id @default(uuid())
-  name               String
-  domain             String?            @unique
-  subscriptionStatus SubscriptionStatus @default(TRIAL)
-  plan               Plan               @default(FREE)
-  trialEndsAt        DateTime
-  planExpiresAt      DateTime?
-  maxEmployees       Int                @default(5)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  users              User[]
-  employees          Employee[]
-  attendances        Attendance[]
-  leaves             Leave[]
-  departments        Department[]
-  designations       Designation[]
-
-  @@map("tenants")
-}
-
-model Employee {
-  id             String        @id @default(uuid())
-  firstName      String
-  lastName       String
-  employeeCode   String
-  phone          String?
-  dateOfJoining  DateTime
-  isActive       Boolean       @default(true)
-  userId         String?       @unique
-  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  departmentId   String?
-  department     Department?   @relation(fields: [departmentId], references: [id])
-  designationId  String?
-  designation    Designation?  @relation(fields: [designationId], references: [id])
-  managerId      String?
-  manager        Employee?     @relation("Reports", fields: [managerId], references: [id])
-  reportees      Employee[]    @relation("Reports")
-  tenantId       String
-  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  attendances    Attendance[]
-  leaves         Leave[]
-  approvedLeaves Leave[]       @relation("LeaveApprovals")
-
-  @@unique([employeeCode, tenantId])
-  @@map("employees")
-}
-```
-
-Every query executed against tenant-isolated models MUST include a `where: { tenantId }` clause. 
-
-Instead of relying on developers to manually write this filter (which is error-prone and leads to leaks), we automate this scoping at the Prisma client level using context propagation and query interception.
+This document explains exactly how tenant isolation, account ownership, and role-based access control work in the HRMS backend after the two-layer identity upgrade.
 
 ---
 
-## 2. JWT Middleware & Context Propagation (`AsyncLocalStorage`)
+## 1. Core Principle: Shared Database, Row-Level Isolation
 
-To decouple controllers and services from having to know or pass around the `tenantId`, we extract it from the JWT payload during authentication and store it in an active execution context using Node.js's built-in **`AsyncLocalStorage`**.
+All tenants share a single PostgreSQL database. Every tenant-scoped table (employees, users, leaves, attendances, departments, designations) contains a `tenantId` foreign key pointing to the `tenants` table. No query ever crosses tenant boundaries unless the caller is a platform-level `SUPER_ADMIN`.
 
-### Execution Context Utility (`src/utils/context.utils.js`)
+### How isolation is enforced
 
-```javascript
-import { AsyncLocalStorage } from 'async_hooks';
+- A **Prisma Client Extension** intercepts every database operation at the query level.
+- It reads the active `tenantId` from Node.js `AsyncLocalStorage` (set by the authentication middleware when a JWT is verified).
+- For read operations (`findMany`, `findFirst`, `count`, etc.), it injects `where: { tenantId }` automatically.
+- For write operations (`create`, `update`, `delete`), it injects or validates `tenantId` in the data/where clause.
+- For `findUnique`, it logs a warning — developers must use `findFirst` for tenant-scoped lookups because `findUnique` only accepts unique identifier fields and cannot accept `tenantId` injection.
 
-/**
- * Singleton instance of AsyncLocalStorage to track request-scoped context
- * (such as tenantId, userId, and role) across asynchronous execution flows.
- * @type {AsyncLocalStorage<{ tenantId: string, userId: string, role: string }>}
- */
-export const contextStorage = new AsyncLocalStorage();
-
-/**
- * Retrieves the current request context from the active store.
- *
- * @returns {{ tenantId: string, userId: string, role: string }|null} The current store context object, or null if called outside an active execution context.
- */
-export const getContext = () => {
-  return contextStorage.getStore() || null;
-};
-
-/**
- * Wraps execution of a function in a new asynchronous context.
- *
- * @param {{ tenantId: string, userId: string, role: string }} context - The context object to store.
- * @param {Function} fn - The callback function to execute within the context.
- * @returns {*} The return value of the executed callback function.
- */
-export const runWithContext = (context, fn) => {
-  return contextStorage.run(context, fn);
-};
-
-/**
- * Shortcut helper to retrieve the tenant ID from the current context.
- *
- * @returns {string|null} The tenant ID string, or null if called outside a context or if tenantId is missing.
- */
-export const getTenantId = () => {
-  return getContext()?.tenantId ?? null;
-};
-
-/**
- * Shortcut helper to retrieve the user's role from the current context.
- *
- * @returns {string|null} The user's role string, or null if called outside a context or if role is missing.
- */
-export const getRole = () => {
-  return getContext()?.role ?? null;
-};
-```
-
-### Authentication Middleware (`src/middleware/auth.middleware.js`)
-
-The middleware verifies the incoming JWT by delegating to the `authService` session verification method, and runs downstream route operations within the storage execution context using `contextStorage.run`.
-
-```javascript
-import { authService } from '../modules/auth/index.js';
-import { UnauthorizedError } from '../utils/error.utils.js';
-import { contextStorage } from '../utils/context.utils.js';
-
-export const authenticate = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedError('Access token is missing or malformed');
-    }
-
-    const token = authHeader.split(' ')[1];
-    const userPayload = await authService.verifySession(token);
-
-    // Bind authentication data to Request context
-    req.user = userPayload;
-
-    // Optional safety check: If tenant context is resolved, it must match user tenant context
-    if (req.tenantId && req.tenantId !== userPayload.tenantId) {
-      throw new UnauthorizedError('Cross-tenant data access is forbidden');
-    }
-
-    // Run subsequent request steps inside AsyncLocalStorage context
-    contextStorage.run({
-      id: userPayload.sub,
-      tenantId: userPayload.tenantId,
-      role: userPayload.role,
-    }, () => {
-      next();
-    });
-  } catch (error) {
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return next(new UnauthorizedError('Access token has expired or is invalid'));
-    }
-    next(error);
-  }
-};
-```
+This means **no controller or service ever needs to manually pass `tenantId`**. The query wrapper handles it invisibly.
 
 ---
 
-## 3. Reusable Prisma Query Wrapper (Prisma Client Extension)
+## 2. Two-Layer Identity Model
 
-We leverage **Prisma Client Extensions** (`$extends`) to intercept all model operations. The extension automatically extracts the active `tenantId` from `AsyncLocalStorage` and overrides the query arguments before execution.
+The system separates **account ownership** (who owns and pays for the tenant) from **HR permissions** (what the user can do inside the HR system). This follows the pattern used by BambooHR, Zoho People, and greytHR.
 
-This is set up globally in the Prisma config.
+### Layer 1: Ownership (`isOwner` flag on User)
 
-### Extended Prisma Client (`src/config/prisma.js`)
+The `isOwner` field is a boolean on the User table. It is set to `true` only for the very first user who registers a tenant. This flag **never changes** — even if the user's role is later changed to HR or EMPLOYEE, `isOwner` remains `true`.
 
-```javascript
-import { PrismaClient } from '@prisma/client';
-import { env } from './env.js';
-import { getContext } from '../utils/context.utils.js';
+What `isOwner` controls:
 
-const prismaRaw = new PrismaClient({
-  log: env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
-});
+- Access to billing and subscription management
+- Ability to delete the entire company account
+- Ability to transfer ownership to another user
+- Cannot be deleted or demoted by anyone — not even by another ADMIN
 
-const prisma = prismaRaw.$extends({
-  query: {
-    $allModels: {
-      async $allOperations({ model, operation, args, query }) {
-        const context = getContext();
+What `isOwner` does NOT control:
 
-        // 1. Bypass tenant filtering if there's no active request context (e.g. signup, login, health checks)
-        if (!context || !context.tenantId) {
-          return query(args);
-        }
+- Day-to-day HR permissions (those come from the role)
 
-        // 2. Bypass tenant filtering if the user is a platform SUPER_ADMIN (allows querying across all tenants)
-        if (context.role === 'SUPER_ADMIN') {
-          return query(args);
-        }
+The `isOwner` flag is never set via any API endpoint. It is only assigned internally during the registration transaction.
 
-        // 3. Do not intercept findUnique. Log a warning and proceed without modifications.
-        // findUnique only accepts unique identifier structures in "where" and will error if non-unique fields like tenantId are injected.
-        // Developers are instructed to use findFirst instead for multi-tenant scoped lookups.
-        if (operation === 'findUnique') {
-          console.warn(`[Prisma Warning]: findUnique was called on model "${model}". It bypasses multi-tenant scoping. Use findFirst instead.`);
-          return query(args);
-        }
+### Layer 2: HR Role (`role` field on User)
 
-        // 4. Scoping for read operations: Inject tenantId filter into where clause
-        if (['findFirst', 'findFirstOrThrow', 'findMany', 'count', 'aggregate', 'groupBy'].includes(operation)) {
-          args.where = args.where || {};
-          args.where.tenantId = context.tenantId;
-        }
+The `role` field determines what the user can do inside the HR system. The available roles, in order of authority:
 
-        // 5. Scoping for write/delete operations: Inject tenantId filter into where clause to restrict modification/deletion
-        if (['update', 'updateMany', 'delete', 'deleteMany'].includes(operation)) {
-          args.where = args.where || {};
-          args.where.tenantId = context.tenantId;
-        }
-
-        // 6. Scoping for create operations: Inject tenantId into data object to bind entity to the active tenant
-        if (operation === 'create') {
-          args.data = args.data || {};
-          args.data.tenantId = context.tenantId;
-        }
-
-        // 7. Scoping for batch create operations: Inject tenantId into all item objects inside the data array
-        if (operation === 'createMany') {
-          if (Array.isArray(args.data)) {
-            args.data = args.data.map((item) => ({
-              ...item,
-              tenantId: context.tenantId,
-            }));
-          } else if (args.data) {
-            args.data.tenantId = context.tenantId;
-          }
-        }
-
-        // 8. Scoping for upsert operations: Inject tenantId into where filter, create payload, and update payload
-        if (operation === 'upsert') {
-          args.where = args.where || {};
-          args.where.tenantId = context.tenantId;
-          args.create = args.create || {};
-          args.create.tenantId = context.tenantId;
-          args.update = args.update || {};
-          args.update.tenantId = context.tenantId;
-        }
-
-        return query(args);
-      },
-    },
-  },
-});
-
-export default prisma;
-```
+| Role | Description |
+|------|-------------|
+| **SUPER_ADMIN** | Platform-level administrator. Can query across all tenants. Not tied to any single company. |
+| **OWNER_ADMIN** | The account owner. Has all ADMIN permissions plus billing, account deletion, and ownership transfer. Cannot be deleted by anyone. |
+| **ADMIN** | Full HR administrative access within the tenant. Can manage all employees, departments, designations, leaves, and payroll. Can be deleted by the owner. |
+| **HR** | Can read and write employee data, approve leaves, and manage departments/designations. Cannot delete employees or access payroll writes. |
+| **MANAGER** | Can only read data for their direct reports (team scope). Can approve leaves for their team. No access to payroll. |
+| **EMPLOYEE** | Can only read and write their own records (self scope). No access to other employees' data. |
 
 ---
 
-## 4. Preventing Cross-Tenant Data Leaks
+## 3. What Happens at Registration
 
-### The Leak Vulnerability (Without Query Wrapper)
+When a new company registers, the system creates **six records** inside a single atomic database transaction. If any step fails, the entire registration is rolled back — no partial data is ever left behind.
 
-Consider a scenario where the application updates employee information by parsing the ID from the route params:
+### Transaction sequence
 
-```javascript
-// VULNERABLE CODE: Controller parses ID, Service updates directly
-async updateEmployee(employeeId, updatedData) {
-  // If employeeId is a random UUID from another tenant, Prisma executes the write!
-  // Any authenticated user can modify other companies' employees by guessing/harvesting UUIDs.
-  return await prisma.employee.update({
-    where: { id: employeeId },
-    data: updatedData
-  });
-}
-```
+1. **Tenant** — The company record is created with a TRIAL subscription status, FREE plan, a 14-day trial expiration date, and a default limit of 5 employees.
 
-Similarly, fetching a single record:
+2. **Department ("Management")** — A default department named "Management" is auto-created for the tenant. The owner can rename this later. This follows the greytHR pattern to ensure the first user is never a "zombie" without a department.
 
-```javascript
-// VULNERABLE CODE: Fetching by unique ID
-async getEmployeeById(employeeId) {
-  // Returns employee data even if it belongs to tenant B and current user is in tenant A!
-  return await prisma.employee.findUnique({
-    where: { id: employeeId }
-  });
-}
-```
+3. **Designation ("Administrator")** — A default designation named "Administrator" is auto-created for the tenant. The owner can rename this later.
 
-### The Automatic Fix (With Query Wrapper)
+4. **User** — The first user is created with role `OWNER_ADMIN` and `isOwner: true`. Their password is hashed with bcrypt (10 salt rounds) before the transaction starts, never inside it.
 
-When the Prisma Client extension is active:
-1. `prisma.employee.findFirst({ where: { id: employeeId } })` intercepts the call.
-2. It rewrites the query parameters under the hood:
-   ```javascript
-   args.where = {
-     id: employeeId,
-     tenantId: "active-tenant-uuid-from-context"
-   }
-   ```
-3. If `employeeId` belongs to another tenant, the query returns `null` or throws a `NotFoundError` rather than accessing cross-tenant data.
+5. **Employee Code Generation** — The system counts existing employees for this tenant (always 0 for a new company), extracts the first two uppercase letters from the company name (e.g., "Acme Corporation" → "AC"), and generates a serial code like `AC-001`. This count happens inside the transaction, making it safe under concurrent requests because PostgreSQL serializes transaction reads.
 
-For write/delete actions, `prisma.employee.update({ where: { id: employeeId }, data })` is rewritten to filter by `tenantId` in the `where` block, ensuring no update occurs if the ID belongs to another tenant.
+6. **Employee** — A complete employee profile is created for the registering user, linked to the User record, the Tenant, the default Department, and the default Designation. The employee has no manager (`managerId: null`) since they are the first person in the organization.
+
+### After the transaction
+
+- An **access token** (JWT) is signed containing: `userId`, `tenantId`, `role` (OWNER_ADMIN), `employeeId`, `subscriptionStatus`, `plan`, and `trialEndsAt`.
+- A **refresh token** is signed with just the `userId`.
+- The refresh token is stored in Redis under the key `refresh:{userId}` with a 7-day TTL.
 
 ---
 
-## 5. Caching and Multi-Tenancy
+## 4. How the Role System Works at Runtime
 
-When introducing performance caching via Redis, data leaks can still happen if key naming is not isolated. If Tenant A caches `employees:list`, and Tenant B requests the list and hits the cache, they will receive Tenant A's data.
+### Authentication flow (every request)
 
-To resolve this, cache keys are automatically prefix-scoped based on context:
+1. The client sends a Bearer token in the Authorization header.
+2. The authentication middleware verifies the JWT and extracts the payload (`userId`, `tenantId`, `role`, `employeeId`).
+3. These values are stored in `AsyncLocalStorage` so they are available to every function in the request chain without being explicitly passed.
+4. The Prisma query wrapper reads `tenantId` from this storage and auto-scopes every query.
 
-```javascript
-// src/utils/cache.utils.js snippet
-export const cache = {
-  getScopedKey(key) {
-    const context = getContext();
-    const tenantId = context?.tenantId;
-    if (!tenantId) {
-      return `global:${key}`;
-    }
-    return `tenant:${tenantId}:${key}`; // E.g. tenant:uuid-1234:employees:list
-  }
-};
-```
+### Authorization flow (protected routes)
 
----
+1. The `authorize` middleware checks if the user's role has permission for the requested resource and action.
+2. It looks up the **abilities map** — a matrix that maps each role to each resource (employee, leave, attendance, payroll, department, designation) and each action (read, write, delete, approve).
+3. Each entry resolves to a **scope level**:
+   - `all` — Access all records within the tenant (empty filter)
+   - `team` — Access only records of direct reports (filter by `managerId`)
+   - `self` — Access only the user's own records (filter by `employeeId`)
+   - `none` — Access denied (returns 403 Forbidden)
+4. The resolved scope filter is attached to `req.scopeFilter` and passed to the service layer, which applies it as an additional Prisma `where` clause.
 
-## 6. Super Admin Operations
+### Role capabilities matrix
 
-There are times when platform administrators (`SUPER_ADMIN` role) need to query across multiple companies (e.g. system dashboards, global reporting, onboarding new tenants).
+| Role | Read Employees | Write Employees | Delete Employees | Approve Leaves | Read Payroll | Write Payroll | Manage Departments |
+|------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| **OWNER_ADMIN** | all | all | all | all | all | all | all |
+| **ADMIN** | all | all | all | all | all | all | all |
+| **HR** | all | all | ✗ | all | all | ✗ | all |
+| **MANAGER** | team | ✗ | ✗ | team | ✗ | ✗ | read only |
+| **EMPLOYEE** | self | self | ✗ | ✗ | self | ✗ | read only |
 
-The Prisma Extension addresses this elegantly:
-
-```javascript
-// If user is a SUPER_ADMIN, we return the query raw, bypassing filter injection
-if (context.role === 'SUPER_ADMIN') {
-  return query(args);
-}
-```
-
-This allows a platform-wide admin to execute global queries, while ordinary tenant admins, managers, and employees remain strictly isolated within their own rows.
+The key difference between `OWNER_ADMIN` and `ADMIN` is not in day-to-day HR operations — both have full access. The difference is in **destructive and billing operations**: only `OWNER_ADMIN` can delete the company account, manage billing, transfer ownership, and delete leave/attendance/payroll records. An `ADMIN` can never be promoted to `OWNER_ADMIN` through any API call — only ownership transfer (by the current owner) can do this.
 
 ---
 
-## 7. Flow Walkthrough: GET /employees
+## 5. Protection Against Owner Deletion and Demotion
 
-Here is how a request traverses the backend, from the Express route to the scoped database response:
+The service layer enforces a critical guard: before any delete or role-change operation on a user or employee, the system checks whether the target user has `isOwner: true`. If they do, the operation is rejected with a 403 Forbidden error regardless of who is requesting it.
 
-### 1. Express Router Setup (`src/modules/employee/routes.js`)
+This means:
 
-```javascript
-import { Router } from 'express';
-import { getAllEmployees } from './controller.js';
-import { authenticate } from '../../middleware/auth.middleware.js';
-import { tenantResolver } from '../../middleware/tenant.middleware.js';
+- An ADMIN cannot delete the owner's employee record
+- An ADMIN cannot change the owner's role to EMPLOYEE
+- The owner cannot accidentally delete themselves
+- Only the owner can initiate an ownership transfer, which is a dedicated endpoint that atomically sets `isOwner: false` on the current owner and `isOwner: true` + `role: OWNER_ADMIN` on the target user
 
-const router = Router();
+---
 
-// Apply security and tenant separation middleware
-router.get('/', authenticate, tenantResolver, getAllEmployees);
+## 6. Preventing Cross-Tenant Data Leaks
 
-export default router;
-```
+### Database level
 
-### 2. Controller Layer (`src/modules/employee/controller.js`)
+The Prisma Client Extension intercepts every query and injects `tenantId` automatically. Even if a malicious user guesses a UUID from another tenant and sends it in a request, the query will include `AND tenantId = 'their-own-tenant'`, which will return no results.
 
-```javascript
-import { employeeService } from './index.js';
-import { sendSuccess } from '../../utils/response.utils.js';
+### Cache level
 
-export const getAllEmployees = async (req, res, next) => {
-  try {
-    // Controllers have no awareness of tenantId, keeping code clean and simple.
-    const result = await employeeService.getAllEmployees();
-    sendSuccess(res, result, 'Employees listed successfully', 200);
-  } catch (error) {
-    next(error);
-  }
-};
-```
+Redis cache keys are automatically prefixed with the tenant ID. When Tenant A caches `employees:list`, the actual Redis key becomes `tenant:{tenantA-uuid}:employees:list`. When Tenant B requests the same data, it looks up `tenant:{tenantB-uuid}:employees:list` — a completely different key. No cross-contamination is possible.
 
-### 3. Service Layer (`src/modules/employee/service.js`)
+### JWT level
 
-```javascript
-import { cache } from '../../utils/cache.utils.js';
+The authentication middleware performs a cross-tenant safety check: if a `tenantId` has already been resolved on the request (e.g., from a URL parameter), it must match the `tenantId` in the JWT payload. If they don't match, the request is rejected immediately.
 
-class EmployeeService {
-  constructor(prisma, redis) {
-    this.prisma = prisma;
-    this.redis = redis;
-  }
+---
 
-  async getAllEmployees() {
-    const cacheKey = 'employees:list';
+## 7. SUPER_ADMIN: Platform-Level Access
 
-    // 1. Checks tenant-scoped Redis key: e.g. "tenant:tenant-uuid-123:employees:list"
-    const cached = await cache.get(cacheKey);
-    if (cached) return cached;
+The `SUPER_ADMIN` role is a platform-level administrator who is not tied to any single tenant. When the Prisma query wrapper detects that the context role is `SUPER_ADMIN`, it skips tenant filtering entirely, allowing global queries across all companies.
 
-    // 2. Client extension intercepts findMany and appends `{ tenantId: activeTenantId }`
-    const employees = await this.prisma.employee.findMany({
-      orderBy: { lastName: 'asc' },
-    });
+This role is used for:
 
-    // 3. Cache the scoped result
-    await cache.set(cacheKey, employees, 300);
-    return employees;
-  }
-}
-```
+- System dashboards and global reporting
+- Onboarding new tenants manually
+- Debugging cross-tenant issues
+- Platform-wide analytics
+
+`SUPER_ADMIN` users are never created through the registration flow. They are seeded directly into the database by the platform engineering team.
+
+---
+
+## 8. Request Lifecycle: Complete Walkthrough
+
+Here is the complete journey of a `GET /api/employees` request from the HTTP layer to the database response:
+
+1. **Express Router** — The request hits the route, which is protected by `authenticate` and `authorize` middleware.
+
+2. **Authentication Middleware** — Verifies the JWT, extracts `userId`, `tenantId`, `role`, and `employeeId`. Stores them in `AsyncLocalStorage`. Attaches the payload to `req.user`.
+
+3. **Authorization Middleware** — Looks up the user's role in the abilities map for the `employee:read` action. Resolves the scope (`all`, `team`, or `self`) and attaches the corresponding Prisma filter to `req.scopeFilter`.
+
+4. **Controller** — Calls the service method, passing `req.scopeFilter` as a parameter. The controller has zero knowledge of `tenantId` or role logic.
+
+5. **Service** — Checks Redis cache first (using a tenant-scoped key). If cache miss, calls `prisma.employee.findMany()` with the scope filter from the controller.
+
+6. **Prisma Client Extension** — Intercepts the `findMany` call. Reads `tenantId` from `AsyncLocalStorage`. Injects `where: { tenantId }` into the query arguments. Executes the modified query.
+
+7. **PostgreSQL** — Returns only rows matching both the scope filter and the tenant filter.
+
+8. **Response** — The service caches the result in Redis (under a tenant-scoped key) and returns it to the controller, which sends it as a JSON response.
+
+At no point in this chain does any developer need to manually write `where: { tenantId }`. The system enforces it automatically at every layer.
+
+---
+
+## 9. Subscription & Plan Context
+
+The JWT access token contains subscription metadata: `subscriptionStatus`, `plan`, and `trialEndsAt`. This allows middleware to enforce plan-level restrictions (e.g., blocking features on the FREE plan, showing trial expiration warnings) without additional database lookups on every request.
+
+| Plan | Max Employees | Features |
+|------|:-:|---|
+| **FREE** | 5 | Core HR, basic attendance, leaves |
+| **STARTER** | 25 | + Payroll, advanced reporting |
+| **PRO** | Unlimited | + API access, custom integrations |
+
+When a tenant's trial expires (14 days after registration), the `subscriptionStatus` transitions from `TRIAL` to `EXPIRED` unless they upgrade to a paid plan. Expired tenants can still log in and view data, but write operations are blocked by subscription middleware.

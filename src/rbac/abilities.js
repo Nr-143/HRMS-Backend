@@ -8,6 +8,14 @@
  * - 'none' -> Access is completely blocked (results in a 403 Forbidden error)
  */
 export const abilities = {
+  OWNER_ADMIN: {
+    employee:   { read: 'all',  write: 'all',  delete: 'all',  approve: 'none' },
+    leave:      { read: 'all',  write: 'all',  delete: 'all',  approve: 'all'  },
+    attendance: { read: 'all',  write: 'all',  delete: 'all',  approve: 'none' },
+    payroll:    { read: 'all',  write: 'all',  delete: 'all',  approve: 'all'  },
+    department: { read: 'all',  write: 'all',  delete: 'all',  approve: 'none' },
+    designation:{ read: 'all',  write: 'all',  delete: 'all',  approve: 'none' }
+  },
   ADMIN: {
     employee:   { read: 'all',  write: 'all',  delete: 'all',  approve: 'none' },
     leave:      { read: 'all',  write: 'all',  delete: 'none', approve: 'all'  },
