@@ -11,18 +11,19 @@ class AuthService {
   }
 
   /**
-   * Register a new Tenant with subscription trial and Admin user atomically.
+   * Register a new Tenant, User, and default Employee profile atomically.
    */
-  async register({ companyName, email, password }) {
+  async register({ companyName, domain, firstName, lastName, email, password }) {
     try {
       const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Perform transaction to onboard tenant and user atomically
+      // Perform transaction to onboard tenant, user, and employee atomically
       const result = await this.prisma.$transaction(async (tx) => {
         const tenant = await tx.tenant.create({
           data: {
             name: companyName,
+            domain: domain || null,
             subscriptionStatus: 'TRIAL',
             plan: 'FREE',
             trialEndsAt,
@@ -41,32 +42,56 @@ class AuthService {
           },
         });
 
-        return { tenant, user };
+        // employeeCode generation logic inside transaction
+        const count = await tx.employee.count({
+          where: { tenantId: tenant.id },
+        });
+        const capitals = companyName.replace(/[^A-Z]/g, '');
+        let initials = capitals.substring(0, 2);
+        if (initials.length < 2) {
+          const clean = companyName.replace(/[^a-zA-Z]/g, '').toUpperCase();
+          initials = clean.substring(0, 2).padEnd(2, 'X');
+        }
+        const generatedCode = `${initials}-${String(count + 1).padStart(3, '0')}`;
+
+        const employee = await tx.employee.create({
+          data: {
+            firstName,
+            lastName,
+            employeeCode: generatedCode,
+            userId: user.id,
+            tenantId: tenant.id,
+            dateOfJoining: new Date(),
+            managerId: null,
+            isActive: true,
+          },
+        });
+
+        return { tenant, user, employee };
       });
 
-      // Generate accessToken
+      // Generate tokens after transaction succeeds
       const accessToken = jwt.sign(
         {
           sub: result.user.id,
           tenantId: result.tenant.id,
           role: 'ADMIN',
-          employeeId: null,
+          employeeId: result.employee.id,
           subscriptionStatus: 'TRIAL',
           plan: 'FREE',
           trialEndsAt: result.tenant.trialEndsAt.toISOString(),
         },
         env.JWT_SECRET,
-        { expiresIn: env.JWT_EXPIRES_IN }
+        { expiresIn: process.env.JWT_ACCESS_EXPIRES || env.JWT_EXPIRES_IN || '15m' }
       );
 
-      // Generate refreshToken
       const refreshToken = jwt.sign(
         { sub: result.user.id },
         env.JWT_SECRET,
-        { expiresIn: '7d' }
+        { expiresIn: process.env.JWT_REFRESH_EXPIRES || '7d' }
       );
 
-      // Store in Redis as: refresh:{user.id} with TTL 7 days
+      // Store refresh token in Redis
       await this.redis.set(`refresh:${result.user.id}`, refreshToken, {
         EX: 7 * 24 * 60 * 60,
       });
@@ -77,6 +102,7 @@ class AuthService {
         tenant: {
           id: result.tenant.id,
           name: result.tenant.name,
+          domain: result.tenant.domain,
           subscriptionStatus: result.tenant.subscriptionStatus,
           plan: result.tenant.plan,
           trialEndsAt: result.tenant.trialEndsAt,
@@ -86,17 +112,40 @@ class AuthService {
           email: result.user.email,
           role: result.user.role,
         },
+        employee: {
+          id: result.employee.id,
+          firstName: result.employee.firstName,
+          lastName: result.employee.lastName,
+          employeeCode: result.employee.employeeCode,
+        },
       };
     } catch (error) {
-      // Handle unique email constraint error from Prisma (P2002)
+      // Prisma P2002 error handling
       if (error.code === 'P2002') {
-        throw {
-          status: 409,
-          code: 'EMAIL_EXISTS',
-          message: 'An account with this email already exists',
-        };
+        const target = String(error.meta?.target || '');
+        if (target.includes('email')) {
+          throw {
+            status: 409,
+            code: 'EMAIL_EXISTS',
+            message: 'An account with this email already exists',
+          };
+        }
+        if (target.includes('domain')) {
+          throw {
+            status: 409,
+            code: 'DOMAIN_EXISTS',
+            message: 'This domain is already registered',
+          };
+        }
       }
-      throw error;
+      if (error.status && error.code) {
+        throw error;
+      }
+      throw {
+        status: 500,
+        code: 'REGISTRATION_FAILED',
+        message: error.message || 'Registration failed',
+      };
     }
   }
 

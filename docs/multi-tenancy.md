@@ -12,33 +12,52 @@ In a **shared schema, row-level isolation** model, all tenant data resides in th
 
 ```prisma
 model Tenant {
-  id          String       @id @default(uuid())
-  name        String
-  domain      String?      @unique
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  users       User[]
-  employees   Employee[]
-  attendances Attendance[]
-  leaves      Leave[]
+  id                 String             @id @default(uuid())
+  name               String
+  domain             String?            @unique
+  subscriptionStatus SubscriptionStatus @default(TRIAL)
+  plan               Plan               @default(FREE)
+  trialEndsAt        DateTime
+  planExpiresAt      DateTime?
+  maxEmployees       Int                @default(5)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  users              User[]
+  employees          Employee[]
+  attendances        Attendance[]
+  leaves             Leave[]
+  departments        Department[]
+  designations       Designation[]
 
   @@map("tenants")
 }
 
 model Employee {
-  id          String       @id @default(uuid())
-  firstName   String
-  lastName    String
-  department  String?
-  userId      String?      @unique
-  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
-  tenantId    String
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  attendances Attendance[]
-  leaves      Leave[]
+  id             String        @id @default(uuid())
+  firstName      String
+  lastName       String
+  employeeCode   String
+  phone          String?
+  dateOfJoining  DateTime
+  isActive       Boolean       @default(true)
+  userId         String?       @unique
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  departmentId   String
+  department     Department    @relation(fields: [departmentId], references: [id])
+  designationId  String
+  designation    Designation   @relation(fields: [designationId], references: [id])
+  managerId      String?
+  manager        Employee?     @relation("Reports", fields: [managerId], references: [id])
+  reportees      Employee[]    @relation("Reports")
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  attendances    Attendance[]
+  leaves         Leave[]
+  approvedLeaves Leave[]       @relation("LeaveApprovals")
 
+  @@unique([employeeCode, tenantId])
   @@map("employees")
 }
 ```
