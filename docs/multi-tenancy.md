@@ -195,3 +195,149 @@ The JWT access token contains subscription metadata: `subscriptionStatus`, `plan
 | **PRO** | Unlimited | + API access, custom integrations |
 
 When a tenant's trial expires (14 days after registration), the `subscriptionStatus` transitions from `TRIAL` to `EXPIRED` unless they upgrade to a paid plan. Expired tenants can still log in and view data, but write operations are blocked by subscription middleware.
+
+---
+
+## 10. User Flows: Auth API Endpoints
+
+The auth module exposes four endpoints under `/api/v1/auth`. Two are public (no token required), and two require a valid Bearer token.
+
+---
+
+### Flow 1: Register a New Company — `POST /api/v1/auth/register-tenant`
+
+**Who can call it:** Anyone (public endpoint, no authentication required).
+
+**What the client sends:**
+
+| Field | Type | Required | Rules |
+|-------|------|:--------:|-------|
+| companyName | string | ✓ | 2–100 characters |
+| domain | string | ✗ | Optional, unique across all tenants |
+| firstName | string | ✓ | 1–50 characters |
+| lastName | string | ✓ | 1–50 characters |
+| email | string | ✓ | Must be a valid email, unique globally |
+| password | string | ✓ | Min 8 chars, must contain uppercase, number, and special character |
+
+**What the system does (inside a single atomic transaction):**
+
+1. Creates the **Tenant** record with TRIAL subscription, FREE plan, 14-day trial window, and a 5-employee limit.
+2. Creates a default **Department** named "Management" for the tenant.
+3. Creates a default **Designation** named "Administrator" for the tenant.
+4. Creates the **User** with role `OWNER_ADMIN` and `isOwner: true`. Password is bcrypt-hashed before the transaction starts.
+5. Generates a serial **employee code** by counting existing employees for this tenant (always 0 for a new company), extracting company initials (first two uppercase letters of the company name), and formatting as `XX-001`.
+6. Creates a complete **Employee** profile linked to the User, Tenant, Management department, and Administrator designation. No manager is set since this is the first person.
+
+**What the system returns after the transaction:**
+
+- `accessToken` — JWT containing userId, tenantId, role (OWNER_ADMIN), employeeId, subscriptionStatus, plan, and trialEndsAt. Expires per `JWT_ACCESS_EXPIRES` env variable (default 15 minutes).
+- `refreshToken` — JWT containing only userId. Expires per `JWT_REFRESH_EXPIRES` env variable (default 7 days). Stored in Redis under `refresh:{userId}`.
+- `tenant` — id, name, domain, subscriptionStatus, plan, trialEndsAt.
+- `user` — id, email, role.
+- `employee` — id, firstName, lastName, employeeCode.
+
+**Error scenarios:**
+
+| Condition | Status | Code |
+|-----------|:------:|------|
+| Email already registered | 409 | `EMAIL_EXISTS` |
+| Domain already taken | 409 | `DOMAIN_EXISTS` |
+| Validation fails (weak password, missing fields) | 400 | Zod validation errors |
+| Any other database error | 500 | `REGISTRATION_FAILED` |
+
+---
+
+### Flow 2: Login — `POST /api/v1/auth/login`
+
+**Who can call it:** Anyone (public endpoint, no authentication required).
+
+**What the client sends:**
+
+| Field | Type | Required |
+|-------|------|:--------:|
+| email | string | ✓ |
+| password | string | ✓ |
+
+**What the system does:**
+
+1. Looks up the User by email. If not found, returns 401.
+2. Compares the provided password against the bcrypt hash stored in the database. If mismatch, returns 401.
+3. Queries the Employee table to find the associated employee profile for this user. Extracts the `employeeId` (or null if no employee record exists).
+4. Signs a JWT access token containing userId, tenantId, role, and employeeId.
+5. Caches the token in Redis under `sess:{userId}` with the configured session TTL for session validation on subsequent requests.
+
+**What the system returns:**
+
+- `token` — The signed JWT access token.
+- `user` — id, email, role, tenantId, employeeId.
+
+**Error scenarios:**
+
+| Condition | Status | Message |
+|-----------|:------:|---------|
+| Email not found | 401 | Invalid email or password |
+| Wrong password | 401 | Invalid email or password |
+
+The system deliberately uses the same error message for both cases to prevent email enumeration attacks.
+
+---
+
+### Flow 3: Get Profile — `GET /api/v1/auth/me`
+
+**Who can call it:** Any authenticated user (requires Bearer token in Authorization header).
+
+**What the system does:**
+
+1. The authentication middleware verifies the JWT, confirms the session still exists in Redis, and attaches the decoded payload to `req.user`.
+2. The controller calls `authService.getProfile(userId)` which performs a single database query with nested includes.
+3. The query fetches the User record along with the related Employee (including department, designation, and manager), and the Tenant.
+
+**What the system returns:**
+
+- `user` — id, email, role, isOwner, isActive, createdAt.
+- `employee` — id, firstName, lastName, employeeCode, phone, dateOfJoining, isActive, plus nested department (id, name), designation (id, name), and manager (id, firstName, lastName, employeeCode). Returns `null` if no employee profile is linked.
+- `tenant` — id, name, domain, subscriptionStatus, plan, trialEndsAt, maxEmployees.
+
+This endpoint is designed for the frontend to hydrate the user's session on app load — it provides everything the UI needs in a single call: who the user is, what company they belong to, their employee details, their department, their designation, and their reporting manager.
+
+**Error scenarios:**
+
+| Condition | Status | Message |
+|-----------|:------:|---------|
+| Token missing or malformed | 401 | Access token is missing or malformed |
+| Token expired or invalid | 401 | Access token has expired or is invalid |
+| Session not in Redis (logged out) | 401 | Session has expired or is logged out |
+| User record deleted after token was issued | 401 | User not found |
+
+---
+
+### Flow 4: Logout — `POST /api/v1/auth/logout`
+
+**Who can call it:** Any authenticated user (requires Bearer token in Authorization header).
+
+**What the system does:**
+
+1. The authentication middleware verifies the JWT and extracts userId from the payload.
+2. The controller calls `authService.logout(userId)` which deletes the session key `sess:{userId}` from Redis.
+3. Any subsequent request using the same token will fail at the session validation step (Redis lookup returns null), effectively invalidating the token server-side even though the JWT itself hasn't expired.
+
+**What the system returns:**
+
+- `null` data with message "Logged out successfully".
+
+This is a server-side session invalidation approach. The JWT itself remains cryptographically valid until it expires, but the Redis session check blocks it from being used.
+
+---
+
+## 11. Context Storage: What Flows Through Every Request
+
+After authentication, the middleware stores the following fields in `AsyncLocalStorage`, making them available to every function in the async call chain without explicit parameter passing:
+
+| Field | Source | Used By |
+|-------|--------|---------|
+| `id` / `userId` | JWT `sub` claim | Service layer for user-specific operations |
+| `tenantId` | JWT `tenantId` claim | Prisma query wrapper for automatic row-level isolation |
+| `role` | JWT `role` claim | RBAC abilities map for scope resolution |
+| `employeeId` | JWT `employeeId` claim | Scope filters for team/self access patterns |
+
+This context is the backbone of the entire multi-tenancy and RBAC system. Every database query, every cache key, and every authorization decision flows from these four values.
