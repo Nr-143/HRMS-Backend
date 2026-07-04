@@ -1,0 +1,85 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Tenant {
+  id          String       @id @default(uuid())
+  name        String
+  domain      String?      @unique
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  users       User[]
+  employees   Employee[]
+  attendances Attendance[]
+  leaves      Leave[]
+
+  @@map("tenants")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  password  String
+  role      String    @default("EMPLOYEE") // e.g. ADMIN, MANAGER, EMPLOYEE
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  employee  Employee?
+
+  @@map("users")
+}
+
+model Employee {
+  id          String       @id @default(uuid())
+  firstName   String
+  lastName    String
+  department  String?
+  userId      String?      @unique
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  attendances Attendance[]
+  leaves      Leave[]
+
+  @@map("employees")
+}
+
+model Attendance {
+  id         String    @id @default(uuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clockIn    DateTime  @default(now())
+  clockOut   DateTime?
+  latitude   Float?
+  longitude  Float?
+  createdAt  DateTime  @default(now())
+
+  @@map("attendances")
+}
+
+model Leave {
+  id         String   @id @default(uuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  startDate  DateTime
+  endDate    DateTime
+  type       String   @default("CASUAL") // CASUAL, SICK, ANNUAL, etc.
+  status     String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  reason     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("leaves")
+}

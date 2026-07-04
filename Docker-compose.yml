@@ -1,0 +1,38 @@
+services:
+  backend:
+    build:
+      context: .
+    container_name: backend
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.docker
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - BE-NETWORK
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - BE-NETWORK
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: nirmal
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: hrms
+    networks:
+      - BE-NETWORK
+
+networks:
+  BE-NETWORK:
+    driver: bridge
