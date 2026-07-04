@@ -106,45 +106,75 @@ export const getRole = () => {
 
 ### Authentication Middleware (`src/middleware/auth.middleware.js`)
 
-The middleware verifies the incoming JWT, extracts tenant and user properties, and runs downstream route operations within the storage execution context using the `runWithContext` helper.
+The middleware verifies the incoming JWT directly, extracts tenant and user properties, and runs downstream route operations within the storage execution context using `contextStorage.run`.
 
 ```javascript
-import { authService } from '../modules/auth/index.js';
-import { UnauthorizedError } from '../utils/error.utils.js';
-import { runWithContext } from '../utils/context.utils.js';
+import jwt from 'jsonwebtoken';
+import { sendError } from '../utils/response.utils.js';
+import { contextStorage } from '../utils/context.utils.js';
 
-export const authenticate = async (req, res, next) => {
+// PHASE 1: This middleware verifies the JWT and sets AsyncLocalStorage context.
+// PHASE 3 (microservices): Replace this with tenant.middleware.js which reads
+// X-Tenant-ID header instead of verifying JWT. The contextStorage.run() call
+// is identical — only the source of tenantId changes.
+
+export const authenticate = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
+    
+    // 1. Extract Bearer token from Authorization header and check format
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedError('Access token is missing or malformed');
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'NO_TOKEN',
+          message: 'Access token is missing or malformed'
+        }
+      });
     }
 
     const token = authHeader.split(' ')[1];
-    const userPayload = await authService.verifySession(token);
+    
+    // Use JWT_ACCESS_SECRET from environment (with fallback to JWT_SECRET)
+    const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'hrms-super-secret-key-change-me-in-production';
 
-    // Bind authentication data to the request object
-    req.user = userPayload;
-
-    // Optional cross-check: If client supplied a tenant header, ensure it matches the token claim
-    if (req.tenantId && req.tenantId !== userPayload.tenantId) {
-      throw new UnauthorizedError('Cross-tenant data access is forbidden');
+    // 2. Verify token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, secret);
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'TOKEN_EXPIRED',
+            message: 'Access token has expired'
+          }
+        });
+      }
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'INVALID_TOKEN',
+          message: 'Access token is invalid or corrupted'
+        }
+      });
     }
 
-    // Run subsequent request steps (controllers, services, queries) inside AsyncLocalStorage context
-    runWithContext({
-      id: userPayload.sub,
-      userId: userPayload.sub,
-      tenantId: userPayload.tenantId,
-      role: userPayload.role,
+    // 3. Attach decoded payload to req.user
+    req.user = decoded;
+
+    // 4. Run subsequent steps within the context Storage
+    contextStorage.run({
+      tenantId: decoded.tenantId || decoded.companyId,
+      userId: decoded.sub,
+      role: decoded.role,
     }, () => {
       next();
     });
   } catch (error) {
-    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
-      return next(new UnauthorizedError('Access token has expired or is invalid'));
-    }
-    next(error);
+    // Fallback error handler
+    return sendError(res, error);
   }
 };
 ```
