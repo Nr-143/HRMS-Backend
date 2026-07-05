@@ -32,9 +32,14 @@ services:
       POSTGRES_USER: nirmal
       POSTGRES_PASSWORD: 123456
       POSTGRES_DB: hrms
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     networks:
       - BE-NETWORK
 
 networks:
   BE-NETWORK:
     driver: bridge
+
+volumes:
+  pgdata:
