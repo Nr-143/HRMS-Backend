@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "docs"
+		},
+		{
+			"path": "node_modules"
+		},
+		{
+			"path": "prisma"
+		},
+		{
+			"path": "src"
+		}
+	],
+	"settings": {}
+}

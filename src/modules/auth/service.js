@@ -5,6 +5,8 @@ import { NotFoundError, UnauthorizedError, ConflictError } from '../../utils/err
 import { cache } from '../../utils/cache.utils.js';
 import { sendMail } from '../../utils/mail.utils.js';
 
+const BCRYPT_ROUNDS = 12;
+
 class AuthService {
   constructor(prisma, redis) {
     this.prisma = prisma;
@@ -17,7 +19,7 @@ class AuthService {
   async register({ companyName, domain, firstName, lastName, email, password }) {
     try {
       const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
       // Perform transaction to onboard tenant, user, and employee atomically
       const result = await this.prisma.$transaction(async (tx) => {
@@ -106,7 +108,7 @@ class AuthService {
 
       const refreshToken = jwt.sign(
         { sub: result.user.id },
-        env.JWT_SECRET,
+        env.JWT_REFRESH_SECRET,
         { expiresIn: process.env.JWT_REFRESH_EXPIRES || '7d' }
       );
 
@@ -183,6 +185,10 @@ class AuthService {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       throw new UnauthorizedError('Invalid email or password');
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedError('Account has been deactivated');
     }
 
     // Retrieve associated employeeId if one exists
@@ -303,6 +309,66 @@ class AuthService {
   }
 
   /**
+   * Rotate refresh token and issue new access token.
+   */
+  async refreshToken(token) {
+    let decoded;
+    try {
+      decoded = jwt.verify(token, env.JWT_REFRESH_SECRET);
+    } catch (error) {
+      throw new UnauthorizedError('Invalid or expired refresh token');
+    }
+
+    const userId = decoded.sub;
+    
+    // Verify token exists in Redis to prevent replay of revoked tokens
+    const activeToken = await this.redis.get(`refresh:${userId}`);
+    if (!activeToken || activeToken !== token) {
+      throw new UnauthorizedError('Refresh token is invalid or has been revoked');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { employee: true }
+    });
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedError('User account is not active');
+    }
+
+    // Generate new tokens
+    const accessToken = jwt.sign(
+      {
+        sub: user.id,
+        tenantId: user.tenantId,
+        role: user.role,
+        employeeId: user.employee ? user.employee.id : null,
+      },
+      env.JWT_SECRET,
+      { expiresIn: env.JWT_EXPIRES_IN }
+    );
+
+    const newRefreshToken = jwt.sign(
+      { sub: user.id },
+      env.JWT_REFRESH_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Rotate refresh token in Redis
+    await this.redis.set(`refresh:${user.id}`, newRefreshToken, {
+      EX: 7 * 24 * 60 * 60,
+    });
+
+    // Update access session cache
+    await cache.set(`sess:${user.id}`, accessToken, env.SESSION_TTL, user.tenantId);
+
+    return {
+      accessToken,
+      refreshToken: newRefreshToken,
+    };
+  }
+
+  /**
    * Log out user and delete cached session from Redis
    */
   async logout(userId) {
@@ -320,7 +386,8 @@ class AuthService {
     });
 
     if (!user) {
-      throw new NotFoundError('No account with this email address exists');
+      // Silent success to prevent user enumeration
+      return { email };
     }
 
     // Generate 6-digit numeric OTP
@@ -346,6 +413,19 @@ class AuthService {
    * Validates OTP and updates password.
    */
   async resetPassword({ email, otp, newPassword }) {
+    const attemptKey = `otp-attempts:${email}`;
+    const attempts = await this.redis.incr(attemptKey);
+    
+    if (attempts === 1) {
+      await this.redis.expire(attemptKey, 300);
+    }
+    
+    if (attempts > 5) {
+      await this.redis.del(`otp:forget-password:${email}`);
+      await this.redis.del(attemptKey);
+      throw new UnauthorizedError('Too many OTP attempts. Please request a new code.');
+    }
+
     const cachedOtp = await this.redis.get(`otp:forget-password:${email}`);
 
     if (!cachedOtp || cachedOtp !== otp) {
@@ -360,7 +440,7 @@ class AuthService {
       throw new NotFoundError('User not found');
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
     // Update password inside DB
     await this.prisma.user.update({
@@ -368,8 +448,9 @@ class AuthService {
       data: { password: hashedPassword },
     });
 
-    // Clean up OTP from Redis
+    // Clean up OTP and attempts from Redis
     await this.redis.del(`otp:forget-password:${email}`);
+    await this.redis.del(attemptKey);
 
     // Invalidate active user sessions to force re-authentication
     await cache.del(`sess:${user.id}`);
@@ -395,7 +476,7 @@ class AuthService {
       throw new UnauthorizedError('Incorrect current password');
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
     await this.prisma.user.update({
       where: { id: userId },

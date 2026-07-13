@@ -28,6 +28,15 @@ export const logout = async (req, res, next) => {
     next(error);
   }
 };
+
+export const refreshToken = async (req, res, next) => {
+  try {
+    const result = await authService.refreshToken(req.body.refreshToken);
+    sendSuccess(res, result, 'Token refreshed successfully', 200);
+  } catch (error) {
+    next(error);
+  }
+};
 export const getSessionProfile = async (req, res, next) => {
   try {
     const profile = await authService.getProfile(req.user.sub);

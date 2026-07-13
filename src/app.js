@@ -20,8 +20,16 @@ const app = express();
 
 // Global Middlewares
 app.use(helmet());
-app.use(cors());
-app.use(express.json());
+app.use(
+  cors({
+    origin: env.CORS_ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID'],
+    credentials: true,
+    maxAge: 86400,
+  })
+);
+app.use(express.json({ limit: '16kb' }));
 
 // Log HTTP requests in development mode
 if (env.NODE_ENV === 'development') {
