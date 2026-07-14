@@ -1,782 +1,197 @@
 {
-	"info": {
-		"_postman_id": "b1a457fd-a590-482a-a03f-4591a27e77a1",
-		"name": "HRMS Modular Monolith API",
-		"description": "Postman Collection for testing the Multi-tenant HRMS Modular Monolith backend application.",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"item": [
-		{
-			"name": "Authentication",
-			"item": [
-				{
-					"name": "Register Tenant",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"companyName\": \"Acme Corporation\",\n    \"domain\": \"acme.example.com\",\n    \"email\": \"admin@acme.example.com\",\n    \"password\": \"AcmeAdminPassword123\",\n    \"firstName\": \"Jane\",\n    \"lastName\": \"Doe\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/register-tenant",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"auth",
-								"register-tenant"
-							]
-						},
-						"description": "Onboard a new tenant organization and automatically provision the tenant's primary Admin user and Employee record."
-					},
-					"response": []
-				},
-				{
-					"name": "Login",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"const response = pm.response.json();",
-									"if (response.data && response.data.token) {",
-									"    pm.collectionVariables.set(\"token\", response.data.token);",
-									"    console.log(\"Saved JWT Token to variables.\");",
-									"}",
-									"if (response.data && response.data.user && response.data.user.tenantId) {",
-									"    pm.collectionVariables.set(\"tenant_id\", response.data.user.tenantId);",
-									"    console.log(\"Saved Tenant ID to variables.\");",
-									"}"
-								],
-								"type": "javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"email\": \"admin@acme.example.com\",\n    \"password\": \"AcmeAdminPassword123\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/login",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"auth",
-								"login"
-							]
-						},
-						"description": "Authenticate user credentials, issue a JWT session token, and automatically save the token and tenant ID to Postman variables."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Current Profile",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/me",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"auth",
-								"me"
-							]
-						},
-						"description": "Fetch the active session profile details based on the provided JWT access token."
-					},
-					"response": []
-				},
-				{
-					"name": "Logout",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/logout",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"auth",
-								"logout"
-							]
-						},
-						"description": "Terminate the active session and invalidate the token cached in Redis."
-					},
-					"response": []
-				},
-				{
-					"name": "Forgot Password (Request OTP)",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"email\": \"admin@acme.example.com\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/forgot-password",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"auth",
-								"forgot-password"
-							]
-						},
-						"description": "Request a 6-digit password reset OTP to be sent to the user's email address."
-					},
-					"response": []
-				},
-				{
-					"name": "Reset Password with OTP",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"email\": \"admin@acme.example.com\",\n    \"otp\": \"123456\",\n    \"newPassword\": \"NewSecureAdminPassword123!\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/reset-password",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"auth",
-								"reset-password"
-							]
-						},
-						"description": "Submit email, 6-digit OTP code, and a new password complying with complexity requirements to reset the account password."
-					},
-					"response": []
-				},
-				{
-					"name": "Change Password (Authenticated)",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"currentPassword\": \"AcmeAdminPassword123\",\n    \"newPassword\": \"AnotherNewSecurePassword123!\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/auth/change-password",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"auth",
-								"change-password"
-							]
-						},
-						"description": "Allows an authenticated user to change their password by validating the current password."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "Employees",
-			"item": [
-				{
-					"name": "Create Employee",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"firstName\": \"John\",\n    \"lastName\": \"Smith\",\n    \"department\": \"Engineering\",\n    \"email\": \"john.smith@acme.example.com\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/employees",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"employees"
-							]
-						},
-						"description": "Provision a new Employee record under the active Tenant context. Admin/HR role only."
-					},
-					"response": []
-				},
-				{
-					"name": "List All Employees",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{base_url}}/api/v1/employees",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"employees"
-							]
-						},
-						"description": "Fetch all employees. Admin/HR role sees all in tenant, Managers see direct reports, and Employees see only themselves."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Employee Details",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{base_url}}/api/v1/employees/{{employee_id}}",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"employees",
-								"{{employee_id}}"
-							]
-						},
-						"description": "Fetch details of a single Employee record by UUID, scoped dynamically by role permissions."
-					},
-					"response": []
-				},
-				{
-					"name": "Update Employee",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "PUT",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"firstName\": \"Johnny\",\n    \"lastName\": \"Smith\",\n    \"department\": \"Product & Engineering\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/employees/{{employee_id}}",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"employees",
-								"{{employee_id}}"
-							]
-						},
-						"description": "Update specific profile fields of an Employee record by UUID."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "Attendance",
-			"item": [
-				{
-					"name": "Clock In",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"employeeId\": \"{{employee_id}}\",\n    \"latitude\": 37.7749,\n    \"longitude\": -122.4194\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/attendance/clock-in",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"attendance",
-								"clock-in"
-							]
-						},
-						"description": "Log clock-in action for an Employee."
-					},
-					"response": []
-				},
-				{
-					"name": "Clock Out",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"attendanceId\": \"{{attendance_id}}\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/attendance/clock-out",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"attendance",
-								"clock-out"
-							]
-						},
-						"description": "Log clock-out action to complete an active attendance session."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Employee Logs",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{base_url}}/api/v1/attendance/employee/{{employee_id}}",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"attendance",
-								"employee",
-								"{{employee_id}}"
-							]
-						},
-						"description": "Fetch attendance history logs for a specific Employee."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "Leaves",
-			"item": [
-				{
-					"name": "Request Leave",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"employeeId\": \"{{employee_id}}\",\n    \"startDate\": \"2026-08-10\",\n    \"endDate\": \"2026-08-15\",\n    \"type\": \"ANNUAL\",\n    \"reason\": \"Summer vacation\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/leaves",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"leaves"
-							]
-						},
-						"description": "Request a leave application, scoped by tenant and roles."
-					},
-					"response": []
-				},
-				{
-					"name": "Review Leave",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "PATCH",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"status\": \"APPROVED\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/leaves/{{leave_id}}/review",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"leaves",
-								"{{leave_id}}",
-								"review"
-							]
-						},
-						"description": "Approve or Reject a pending leave request, scoped to Admin/HR globally and Managers for team reports."
-					},
-					"response": []
-				},
-				{
-					"name": "Get Employee Leaves",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							}
-						],
-						"url": {
-							"raw": "{{base_url}}/api/v1/leaves/employee/{{employee_id}}",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"leaves",
-								"employee",
-								"{{employee_id}}"
-							]
-						},
-						"description": "Fetch leave records for an Employee, scoped by role."
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "Notifications",
-			"item": [
-				{
-					"name": "Send Notification",
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "POST",
-						"header": [
-							{
-								"key": "X-Tenant-ID",
-								"value": "{{tenant_id}}",
-								"type": "text"
-							},
-							{
-								"key": "Content-Type",
-								"value": "application/json",
-								"type": "text"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"recipientId\": \"{{employee_id}}\",\n    \"message\": \"Your leave request has been approved.\",\n    \"type\": \"EMAIL\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/api/v1/notifications",
-							"host": [
-								"{{base_url}}"
-							],
-							"path": [
-								"api",
-								"v1",
-								"notifications"
-							]
-						},
-						"description": "Dispatch a stub notification email/alert to a recipient employee."
-					},
-					"response": []
-				}
-			]
-		}
-	],
-	"variable": [
-		{
-			"key": "base_url",
-			"value": "http://localhost:3000",
-			"type": "string"
-		},
-		{
-			"key": "token",
-			"value": "jwt_token_placeholder",
-			"type": "string"
-		},
-		{
-			"key": "tenant_id",
-			"value": "tenant_uuid_placeholder",
-			"type": "string"
-		},
-		{
-			"key": "employee_id",
-			"value": "employee_uuid_placeholder",
-			"type": "string"
-		},
-		{
-			"key": "leave_id",
-			"value": "leave_uuid_placeholder",
-			"type": "string"
-		},
-		{
-			"key": "attendance_id",
-			"value": "attendance_uuid_placeholder",
-			"type": "string"
-		}
-	]
+  "info": {
+    "name": "HRMS API - Comprehensive Tests (Postman)",
+    "description": "Postman collection covering both positive (good) and negative (bad/security) scenarios for the HRMS Backend. Includes dynamic variables to automatically save and inject access tokens and tenant IDs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "refreshToken", "value": "", "type": "string" },
+    { "key": "tenantId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:3000/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "1.1 Register Tenant (Good Case)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if(jsonData.data) {",
+                  "    pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', jsonData.data.refreshToken);",
+                  "    pm.collectionVariables.set('tenantId', jsonData.data.tenant.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/auth/register-tenant", "host": ["{{baseUrl}}"], "path": ["auth", "register-tenant"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyName\": \"Acme Corp\",\n  \"firstName\": \"Admin\",\n  \"lastName\": \"User\",\n  \"email\": \"admin@acme.com\",\n  \"password\": \"Secure@1234\"\n}"
+            }
+          }
+        },
+        {
+          "name": "1.2 Login (Good Case)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if(jsonData.data) {",
+                  "    pm.collectionVariables.set('accessToken', jsonData.data.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@acme.com\",\n  \"password\": \"Secure@1234\"\n}"
+            }
+          }
+        },
+        {
+          "name": "1.3 Login (Bad Case - Wrong Password)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@acme.com\",\n  \"password\": \"WrongPass123!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "1.4 Refresh Token (Good Case)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if(jsonData.data) {",
+                  "    pm.collectionVariables.set('accessToken', jsonData.data.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', jsonData.data.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "1.5 Get Profile (Good Case)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Security & Validation (Bad Cases)",
+      "item": [
+        {
+          "name": "2.1 Invalid Tenant Format (Bad Case - Security C2)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "invalid-uuid-format-test" }
+            ],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "2.2 Missing Auth Token (Bad Case)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "2.3 Invalid Body Size (>16kb) (Bad Case)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@acme.com\",\n  \"password\": \"Secure@1234\",\n  \"padding\": \"REPLACE_WITH_VERY_LONG_STRING\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Attendance",
+      "item": [
+        {
+          "name": "3.1 Clock In (Good Case)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "X-Tenant-ID", "value": "{{tenantId}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/attendance/clock-in", "host": ["{{baseUrl}}"], "path": ["attendance", "clock-in"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 12.9716,\n  \"longitude\": 77.5946\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
 }

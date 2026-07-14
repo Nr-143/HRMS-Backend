@@ -34,6 +34,7 @@ class AttendanceService {
     return await this.prisma.attendance.create({
       data: {
         employeeId,
+        date: new Date(),
         latitude,
         longitude,
       },

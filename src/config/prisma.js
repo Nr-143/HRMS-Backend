@@ -3,6 +3,7 @@ import { env } from './env.js';
 import { getContext } from '../utils/context.utils.js';
 
 const prismaRaw = new PrismaClient({
+  datasourceUrl: env.DATABASE_URL,
   log: env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
 });
 

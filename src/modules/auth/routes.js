@@ -6,7 +6,8 @@ import {
   getSessionProfile, 
   forgotPassword, 
   resetPassword, 
-  changePassword 
+  changePassword,
+  refreshToken
 } from './controller.js';
 import { 
   registerTenantSchema, 
@@ -18,6 +19,7 @@ import {
 } from './validation.js';
 import { validate } from '../../middleware/validation.middleware.js';
 import { authenticate } from '../../middleware/auth.middleware.js';
+import { tenantResolver } from '../../middleware/tenant.middleware.js';
 import { createRateLimiter } from '../../middleware/rate-limiter.middleware.js';
 
 const router = Router();
@@ -33,8 +35,8 @@ router.post('/forgot-password', forgotLimiter, validate(forgotPasswordSchema), f
 router.post('/reset-password', forgotLimiter, validate(resetPasswordSchema), resetPassword);
 
 // Authenticated routes
-router.post('/logout', authenticate, logout);
-router.get('/me', authenticate, getSessionProfile);
-router.post('/change-password', authenticate, validate(changePasswordSchema), changePassword);
+router.post('/logout', authenticate, tenantResolver, logout);
+router.get('/me', authenticate, tenantResolver, getSessionProfile);
+router.post('/change-password', authenticate, tenantResolver, validate(changePasswordSchema), changePassword);
 
 export default router;

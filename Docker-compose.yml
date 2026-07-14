@@ -24,14 +24,14 @@ services:
       - BE-NETWORK
 
   postgres:
-    image: postgres:latest
+    image: postgres:16
     container_name: postgres
     ports:
       - "5435:5432"
     environment:
-      POSTGRES_USER: nirmal
-      POSTGRES_PASSWORD: 123456
-      POSTGRES_DB: hrms
+      POSTGRES_USER: "nirmal"
+      POSTGRES_PASSWORD: "123456"
+      POSTGRES_DB: "hrms"
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
