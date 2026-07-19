@@ -4,12 +4,14 @@ import { createDepartmentSchema, batchCreateDepartmentSchema, updateDepartmentSc
 import { validate } from '../../middleware/validation.middleware.js';
 import { authenticate } from '../../middleware/auth.middleware.js';
 import { tenantResolver } from '../../middleware/tenant.middleware.js';
+import { checkSubscription } from '../../middleware/subscription.middleware.js';
 import { authorize } from '../../rbac/index.js';
 
 const router = Router();
 
 router.use(authenticate);
 router.use(tenantResolver);
+router.use(checkSubscription);
 
 router.post('/',       validate(createDepartmentSchema),      authorize('department', 'write'),  createDepartment);
 router.post('/batch',  validate(batchCreateDepartmentSchema),  authorize('department', 'write'),  batchCreateDepartments);

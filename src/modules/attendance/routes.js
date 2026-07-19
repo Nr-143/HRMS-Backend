@@ -4,12 +4,14 @@ import { clockInSchema, clockOutSchema, employeeIdParamSchema, summaryQuerySchem
 import { validate } from '../../middleware/validation.middleware.js';
 import { authenticate } from '../../middleware/auth.middleware.js';
 import { tenantResolver } from '../../middleware/tenant.middleware.js';
+import { checkSubscription } from '../../middleware/subscription.middleware.js';
 import { authorize } from '../../rbac/index.js';
 
 const router = Router();
 
 router.use(authenticate);
 router.use(tenantResolver);
+router.use(checkSubscription);
 
 // Static routes first — prevent shadowing by /:id
 router.post('/clock-in',              validate(clockInSchema),           authorize('attendance', 'write'), clockIn);

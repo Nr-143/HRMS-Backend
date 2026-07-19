@@ -197,13 +197,24 @@ class AuthService {
     });
     const employeeId = employee ? employee.id : null;
 
-    // Sign JWT with employeeId, tenantId, and role
+    // Fetch tenant for subscription metadata
+    const tenant = await this.prisma.tenant.findFirst({
+      where: { id: user.tenantId },
+      select: { subscriptionStatus: true, plan: true, trialEndsAt: true, planExpiresAt: true, maxEmployees: true },
+    });
+
+    // Sign JWT with employeeId, tenantId, role, and subscription context
     const token = jwt.sign(
       {
         sub: user.id,
         tenantId: user.tenantId,
         role: user.role,
         employeeId,
+        subscriptionStatus: tenant?.subscriptionStatus ?? 'TRIAL',
+        plan:               tenant?.plan               ?? 'FREE',
+        trialEndsAt:        tenant?.trialEndsAt?.toISOString()  ?? null,
+        planExpiresAt:      tenant?.planExpiresAt?.toISOString() ?? null,
+        maxEmployees:       tenant?.maxEmployees       ?? 5,
       },
       env.JWT_SECRET,
       { expiresIn: env.JWT_EXPIRES_IN }
@@ -329,7 +340,10 @@ class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { employee: true }
+      include: {
+        employee: true,
+        tenant: { select: { subscriptionStatus: true, plan: true, trialEndsAt: true, planExpiresAt: true, maxEmployees: true } },
+      },
     });
 
     if (!user || !user.isActive) {
@@ -342,7 +356,12 @@ class AuthService {
         sub: user.id,
         tenantId: user.tenantId,
         role: user.role,
-        employeeId: user.employee ? user.employee.id : null,
+        employeeId:         user.employee ? user.employee.id : null,
+        subscriptionStatus: user.tenant?.subscriptionStatus ?? 'TRIAL',
+        plan:               user.tenant?.plan               ?? 'FREE',
+        trialEndsAt:        user.tenant?.trialEndsAt?.toISOString()  ?? null,
+        planExpiresAt:      user.tenant?.planExpiresAt?.toISOString() ?? null,
+        maxEmployees:       user.tenant?.maxEmployees       ?? 5,
       },
       env.JWT_SECRET,
       { expiresIn: env.JWT_EXPIRES_IN }
