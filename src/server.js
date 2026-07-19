@@ -1,7 +1,10 @@
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import app from './app.js';
 import { env } from './config/env.js';
 import prisma from './config/prisma.js';
 import redisClient from './config/redis.js';
+import { initAttendanceSocket } from './sockets/attendance.socket.js';
 
 const startServer = async () => {
   try {
@@ -25,8 +28,19 @@ const startServer = async () => {
     }
     console.log('PostgreSQL Database connection verified successfully');
 
-    // 3. Start Express server listener
-    const server = app.listen(env.PORT, () => {
+    // 3. Attach Socket.io to the HTTP server
+    const httpServer = createServer(app);
+    const io = new Server(httpServer, {
+      cors: {
+        origin: env.CORS_ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+        methods: ['GET', 'POST'],
+        credentials: true,
+      },
+    });
+    initAttendanceSocket(io);
+
+    // 4. Start HTTP server listener
+    const server = httpServer.listen(env.PORT, () => {
       console.log(` HRMS Modular Monolith running in [${env.NODE_ENV}] mode on port ${env.PORT}`);
     });
 
