@@ -15,6 +15,7 @@ import leaveRoutes from './modules/leave/routes.js';
 import notificationRoutes from './modules/notification/routes.js';
 import departmentRoutes from './modules/department/routes.js';
 import designationRoutes from './modules/designation/routes.js';
+import dashboardRoutes from './modules/dashboard/routes.js';
 
 import { env } from './config/env.js';
 
@@ -60,6 +61,7 @@ app.use('/api/v1/leaves', leaveRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/departments', departmentRoutes);
 app.use('/api/v1/designations', designationRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
 
 // Catch 404 and forward to error handler
 app.use((req, res, next) => {
