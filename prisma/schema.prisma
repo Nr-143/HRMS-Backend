@@ -139,12 +139,14 @@ model Leave {
   endDate    DateTime
   type       LeaveType   @default(CASUAL)
   status     LeaveStatus @default(PENDING)
-  reason     String?
-  approverId String?
-  approver   Employee?   @relation("LeaveApprovals", fields: [approverId], references: [id])
-  approvedAt DateTime?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  reason          String?
+  rejectionReason String?
+  requestedDays   Int         @default(1)
+  approverId      String?
+  approver        Employee?   @relation("LeaveApprovals", fields: [approverId], references: [id])
+  approvedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   @@map("leaves")
 }

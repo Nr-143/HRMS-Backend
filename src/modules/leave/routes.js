@@ -1,6 +1,15 @@
 import { Router } from 'express';
-import { requestLeave, reviewLeave, getEmployeeLeaves } from './controller.js';
-import { requestLeaveSchema, reviewLeaveSchema } from './validation.js';
+import {
+  applyLeave,
+  getLeaves,
+  getLeaveById,
+  approveLeave,
+  rejectLeave,
+  cancelLeave,
+  getMyBalance,
+  getEmployeeBalance,
+} from './controller.js';
+import { applyLeaveSchema, rejectLeaveSchema, idParamSchema, employeeIdParamSchema } from './validation.js';
 import { validate } from '../../middleware/validation.middleware.js';
 import { authenticate } from '../../middleware/auth.middleware.js';
 import { tenantResolver } from '../../middleware/tenant.middleware.js';
@@ -8,12 +17,18 @@ import { authorize } from '../../rbac/index.js';
 
 const router = Router();
 
-// Apply auth and tenant validations
 router.use(authenticate);
 router.use(tenantResolver);
 
-router.post('/', validate(requestLeaveSchema), authorize('leave', 'write'), requestLeave);
-router.patch('/:id/review', validate(reviewLeaveSchema), authorize('leave', 'approve'), reviewLeave);
-router.get('/employee/:employeeId', authorize('leave', 'read'), getEmployeeLeaves);
+// Static routes before /:id to prevent shadowing
+router.get('/balance',                                                    authorize('leave', 'read'),    getMyBalance);
+router.get('/balance/:employeeId', validate(employeeIdParamSchema),       authorize('leave', 'read'),    getEmployeeBalance);
+
+router.post('/',                   validate(applyLeaveSchema),            authorize('leave', 'write'),   applyLeave);
+router.get('/',                                                           authorize('leave', 'read'),    getLeaves);
+router.get('/:id',                 validate(idParamSchema),               authorize('leave', 'read'),    getLeaveById);
+router.post('/:id/approve',        validate(idParamSchema),               authorize('leave', 'approve'), approveLeave);
+router.post('/:id/reject',         validate(rejectLeaveSchema),           authorize('leave', 'approve'), rejectLeave);
+router.post('/:id/cancel',         validate(idParamSchema),               authorize('leave', 'write'),   cancelLeave);
 
 export default router;
