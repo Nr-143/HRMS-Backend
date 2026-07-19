@@ -9,6 +9,9 @@ services:
 
     env_file:
       - .env.docker
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules
     depends_on:
       - postgres
       - redis

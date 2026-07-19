@@ -1,0 +1,1772 @@
+{
+	"info": {
+		"_postman_id": "hrms-backend-api-v1",
+		"name": "HRMS Backend API — Story-Driven Testing",
+		"description": "# HRMS Backend API Collection\n\nA **story-driven** Postman collection for the HRMS multi-tenant SaaS backend.\n\n## 🎯 Testing Flow (Story)\n\n1. **Health Check** — Verify server is running\n2. **Tenant Setup** — Register a new tenant (creates OWNER_ADMIN)\n3. **Auth** — Login as OWNER_ADMIN, get tokens\n4. **Org Setup** — Create departments & designations\n5. **Employee Onboarding** — Create employees with all roles (HR, MANAGER, EMPLOYEE, ADMIN)\n6. **Role Switching** — Login as any role to test RBAC\n7. **Attendance** — Clock in/out, view records\n8. **Leave** — Apply, approve, reject, cancel\n9. **Dashboard** — View role-specific dashboards\n10. **Notifications** — Send in-app notifications\n\n## 🔑 Variables Auto-Populated\n\nTest scripts automatically capture and store `accessToken`, `refreshToken`, `tenantId`, `employeeId`, etc. Just run requests in order.\n\n## 🎭 Role Switching\n\nUse the **\"Role Switch\"** folder to login as different roles. Each login auto-updates the `accessToken` and `X-Tenant-ID` for subsequent requests.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{ "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+		{ "key": "accessToken", "value": "", "type": "string" },
+		{ "key": "refreshToken", "value": "", "type": "string" },
+		{ "key": "tenantId", "value": "", "type": "string" },
+		{ "key": "ownerEmail", "value": "owner@acmecorp.com", "type": "string" },
+		{ "key": "ownerPassword", "value": "Owner@123!", "type": "string" },
+		{ "key": "adminEmail", "value": "", "type": "string" },
+		{ "key": "adminPassword", "value": "Admin@123!", "type": "string" },
+		{ "key": "hrEmail", "value": "", "type": "string" },
+		{ "key": "hrPassword", "value": "HrPass@123!", "type": "string" },
+		{ "key": "managerEmail", "value": "", "type": "string" },
+		{ "key": "managerPassword", "value": "Manager@123!", "type": "string" },
+		{ "key": "employeeEmail", "value": "", "type": "string" },
+		{ "key": "employeePassword", "value": "Employee@123!", "type": "string" },
+		{ "key": "departmentId", "value": "", "type": "string" },
+		{ "key": "departmentId2", "value": "", "type": "string" },
+		{ "key": "designationId", "value": "", "type": "string" },
+		{ "key": "designationId2", "value": "", "type": "string" },
+		{ "key": "employeeId", "value": "", "type": "string" },
+		{ "key": "adminEmployeeId", "value": "", "type": "string" },
+		{ "key": "hrEmployeeId", "value": "", "type": "string" },
+		{ "key": "managerEmployeeId", "value": "", "type": "string" },
+		{ "key": "regularEmployeeId", "value": "", "type": "string" },
+		{ "key": "leaveId", "value": "", "type": "string" },
+		{ "key": "currentRole", "value": "OWNER_ADMIN", "type": "string" }
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{ "key": "token", "value": "{{accessToken}}", "type": "string" }
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Global pre-request: nothing needed"
+				]
+			}
+		}
+	],
+	"item": [
+		{
+			"name": "🏥 0 — Health Check",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": [],
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Server is running', function () {",
+									"    pm.response.to.have.status(200);",
+									"    const json = pm.response.json();",
+									"    pm.expect(json.status).to.eql('success');",
+									"});"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "🏢 1 — Tenant Registration",
+			"description": "Register a brand-new tenant. This creates the company + OWNER_ADMIN user. Tokens and tenantId are auto-saved.",
+			"item": [
+				{
+					"name": "Register Tenant (creates OWNER_ADMIN)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Tenant registered — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    if (json.data.accessToken)  pm.collectionVariables.set('accessToken',  json.data.accessToken);",
+									"    if (json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+									"    if (json.data.tenantId)     pm.collectionVariables.set('tenantId',     json.data.tenantId);",
+									"    if (json.data.tenant && json.data.tenant.id) pm.collectionVariables.set('tenantId', json.data.tenant.id);",
+									"    // Some implementations return nested user",
+									"    if (json.data.user && json.data.user.id) pm.collectionVariables.set('ownerUserId', json.data.user.id);",
+									"    console.log('✅ Tenant registered. tenantId=' + pm.collectionVariables.get('tenantId'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"companyName\": \"Acme Corp\",\n  \"domain\": \"acmecorp.com\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Owner\",\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/register-tenant", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "register-tenant"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🔐 2 — Auth Flows",
+			"description": "Login, logout, token refresh, password management. Run 'Login as OWNER_ADMIN' first to populate tokens.",
+			"item": [
+				{
+					"name": "Login as OWNER_ADMIN",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Login successful — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    if (json.data.accessToken)  pm.collectionVariables.set('accessToken',  json.data.accessToken);",
+									"    if (json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+									"    if (json.data.tenantId)     pm.collectionVariables.set('tenantId',     json.data.tenantId);",
+									"    pm.collectionVariables.set('currentRole', 'OWNER_ADMIN');",
+									"    console.log('✅ Logged in as OWNER_ADMIN. Token saved.');",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Profile (GET /me)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Profile fetched — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    console.log('👤 Current role: ' + (json.data.role || 'unknown'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/me", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "me"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Refresh Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Token refreshed — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    if (json.data.accessToken)  pm.collectionVariables.set('accessToken',  json.data.accessToken);",
+									"    if (json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+									"    console.log('🔄 Tokens refreshed.');",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "refresh"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "Forgot Password",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('OTP sent — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{ownerEmail}}\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "forgot-password"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Password (needs OTP)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Password reset — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"otp\": \"123456\",\n  \"newPassword\": \"NewOwner@123!\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "reset-password"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "Change Password (authenticated)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Password changed — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"currentPassword\": \"{{ownerPassword}}\",\n  \"newPassword\": \"ChangedOwner@123!\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/change-password", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "change-password"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Logout",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Logged out — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"console.log('🚪 Logged out. Re-login to continue testing.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/logout", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "logout"] }
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🏗️ 3 — Org Setup (Departments & Designations)",
+			"description": "Create departments and designations before onboarding employees. Run as OWNER_ADMIN or ADMIN.",
+			"item": [
+				{
+					"name": "Create Department — Engineering",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Department created — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data && json.data.id) {",
+									"    pm.collectionVariables.set('departmentId', json.data.id);",
+									"    console.log('🏢 Department \"Engineering\" created. ID=' + json.data.id);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Engineering\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/departments", "host": ["{{baseUrl}}"], "path": ["api", "v1", "departments"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Batch Create Departments — HR, Finance, Marketing",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Batch departments created — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data && Array.isArray(json.data) && json.data.length > 0) {",
+									"    pm.collectionVariables.set('departmentId2', json.data[0].id);",
+									"    console.log('🏢 Batch departments created. HR ID=' + json.data[0].id);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"names\": [\"Human Resources\", \"Finance\", \"Marketing\"]\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/departments/batch", "host": ["{{baseUrl}}"], "path": ["api", "v1", "departments", "batch"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Departments",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Departments listed — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    console.log('📋 Total departments: ' + (Array.isArray(json.data) ? json.data.length : 'N/A'));",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/departments", "host": ["{{baseUrl}}"], "path": ["api", "v1", "departments"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Update Department",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Department updated — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Engineering & DevOps\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/departments/{{departmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "departments", "{{departmentId}}"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Department",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Department deleted — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/departments/{{departmentId2}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "departments", "{{departmentId2}}"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Create Designation — Software Engineer",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Designation created — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data && json.data.id) {",
+									"    pm.collectionVariables.set('designationId', json.data.id);",
+									"    console.log('🏷️ Designation \"Software Engineer\" created. ID=' + json.data.id);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Software Engineer\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/designations", "host": ["{{baseUrl}}"], "path": ["api", "v1", "designations"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Batch Create Designations — Manager, HR Lead, Intern",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Batch designations created — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data && Array.isArray(json.data) && json.data.length > 0) {",
+									"    pm.collectionVariables.set('designationId2', json.data[0].id);",
+									"    console.log('🏷️ Batch designations created. Manager ID=' + json.data[0].id);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"names\": [\"Engineering Manager\", \"HR Lead\", \"Intern\"]\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/designations/batch", "host": ["{{baseUrl}}"], "path": ["api", "v1", "designations", "batch"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Designations",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Designations listed — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/designations", "host": ["{{baseUrl}}"], "path": ["api", "v1", "designations"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Update Designation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Designation updated — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Senior Software Engineer\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/designations/{{designationId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "designations", "{{designationId}}"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Designation",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Designation deleted — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/designations/{{designationId2}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "designations", "{{designationId2}}"] }
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "👥 4 — Employee Onboarding (all roles)",
+			"description": "Create employees for each role. Run as OWNER_ADMIN. IDs and emails are auto-saved for role switching later.",
+			"item": [
+				{
+					"name": "Create ADMIN Employee",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('ADMIN employee created — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    const empId = json.data.id || (json.data.employee && json.data.employee.id);",
+									"    if (empId) pm.collectionVariables.set('adminEmployeeId', empId);",
+									"    const email = json.data.email || (json.data.user && json.data.user.email);",
+									"    if (email) pm.collectionVariables.set('adminEmail', email);",
+									"    console.log('👤 ADMIN employee created. ID=' + empId);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"firstName\": \"Alice\",\n  \"lastName\": \"Admin\",\n  \"email\": \"alice.admin@acmecorp.com\",\n  \"dateOfJoining\": \"2025-01-15\",\n  \"departmentId\": \"{{departmentId}}\",\n  \"designationId\": \"{{designationId}}\",\n  \"role\": \"ADMIN\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/employees", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Create HR Employee",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('HR employee created — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    const empId = json.data.id || (json.data.employee && json.data.employee.id);",
+									"    if (empId) pm.collectionVariables.set('hrEmployeeId', empId);",
+									"    const email = json.data.email || (json.data.user && json.data.user.email);",
+									"    if (email) pm.collectionVariables.set('hrEmail', email);",
+									"    console.log('👤 HR employee created. ID=' + empId);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"firstName\": \"Hannah\",\n  \"lastName\": \"HRLead\",\n  \"email\": \"hannah.hr@acmecorp.com\",\n  \"dateOfJoining\": \"2025-02-01\",\n  \"departmentId\": \"{{departmentId}}\",\n  \"designationId\": \"{{designationId}}\",\n  \"role\": \"HR\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/employees", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Create MANAGER Employee",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('MANAGER employee created — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    const empId = json.data.id || (json.data.employee && json.data.employee.id);",
+									"    if (empId) pm.collectionVariables.set('managerEmployeeId', empId);",
+									"    const email = json.data.email || (json.data.user && json.data.user.email);",
+									"    if (email) pm.collectionVariables.set('managerEmail', email);",
+									"    console.log('👤 MANAGER employee created. ID=' + empId);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"firstName\": \"Mike\",\n  \"lastName\": \"Manager\",\n  \"email\": \"mike.manager@acmecorp.com\",\n  \"dateOfJoining\": \"2025-03-01\",\n  \"departmentId\": \"{{departmentId}}\",\n  \"designationId\": \"{{designationId2}}\",\n  \"role\": \"MANAGER\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/employees", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Create EMPLOYEE (regular)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('EMPLOYEE created — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    const empId = json.data.id || (json.data.employee && json.data.employee.id);",
+									"    if (empId) {",
+									"        pm.collectionVariables.set('regularEmployeeId', empId);",
+									"        pm.collectionVariables.set('employeeId', empId);",
+									"    }",
+									"    const email = json.data.email || (json.data.user && json.data.user.email);",
+									"    if (email) pm.collectionVariables.set('employeeEmail', email);",
+									"    console.log('👤 Regular EMPLOYEE created. ID=' + empId);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"firstName\": \"Eve\",\n  \"lastName\": \"Employee\",\n  \"email\": \"eve.employee@acmecorp.com\",\n  \"dateOfJoining\": \"2025-04-01\",\n  \"departmentId\": \"{{departmentId}}\",\n  \"designationId\": \"{{designationId}}\",\n  \"managerId\": \"{{managerEmployeeId}}\",\n  \"role\": \"EMPLOYEE\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/employees", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Employees",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Employees listed — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"const json = pm.response.json();",
+									"console.log('📋 Employees: ' + JSON.stringify(json.data, null, 2).substring(0, 500));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/employees", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get Employee by ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Employee fetched — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/employees/{{regularEmployeeId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees", "{{regularEmployeeId}}"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Update Employee",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Employee updated — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"firstName\": \"Evelyn\",\n  \"phone\": \"+91-9876543210\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/employees/{{regularEmployeeId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees", "{{regularEmployeeId}}"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get Org Chart",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Org chart fetched — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/employees/org-chart", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees", "org-chart"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Deactivate Employee (soft delete)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Employee deactivated — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/employees/{{regularEmployeeId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees", "{{regularEmployeeId}}"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Reactivate Employee",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Employee reactivated — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/employees/{{regularEmployeeId}}/reactivate", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees", "{{regularEmployeeId}}", "reactivate"] }
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🎭 5 — Role Switch (Login as any role)",
+			"description": "Use these to quickly switch between roles. Each login auto-updates the accessToken so all subsequent requests use the new role.",
+			"item": [
+				{
+					"name": "🔵 Switch → OWNER_ADMIN",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Logged in as OWNER_ADMIN — 200', function () { pm.response.to.have.status(200); });",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    if (json.data.accessToken)  pm.collectionVariables.set('accessToken',  json.data.accessToken);",
+									"    if (json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+									"    if (json.data.tenantId)     pm.collectionVariables.set('tenantId',     json.data.tenantId);",
+									"    pm.collectionVariables.set('currentRole', 'OWNER_ADMIN');",
+									"    console.log('🔵 Now acting as: OWNER_ADMIN');",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\"\n}" },
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "🟢 Switch → ADMIN",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Logged in as ADMIN — 200', function () { pm.response.to.have.status(200); });",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    if (json.data.accessToken)  pm.collectionVariables.set('accessToken',  json.data.accessToken);",
+									"    if (json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+									"    if (json.data.tenantId)     pm.collectionVariables.set('tenantId',     json.data.tenantId);",
+									"    pm.collectionVariables.set('currentRole', 'ADMIN');",
+									"    console.log('🟢 Now acting as: ADMIN');",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{\n  \"email\": \"alice.admin@acmecorp.com\",\n  \"password\": \"{{adminPassword}}\"\n}" },
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "🟡 Switch → HR",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Logged in as HR — 200', function () { pm.response.to.have.status(200); });",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    if (json.data.accessToken)  pm.collectionVariables.set('accessToken',  json.data.accessToken);",
+									"    if (json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+									"    if (json.data.tenantId)     pm.collectionVariables.set('tenantId',     json.data.tenantId);",
+									"    pm.collectionVariables.set('currentRole', 'HR');",
+									"    console.log('🟡 Now acting as: HR');",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{\n  \"email\": \"hannah.hr@acmecorp.com\",\n  \"password\": \"{{hrPassword}}\"\n}" },
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "🟠 Switch → MANAGER",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Logged in as MANAGER — 200', function () { pm.response.to.have.status(200); });",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    if (json.data.accessToken)  pm.collectionVariables.set('accessToken',  json.data.accessToken);",
+									"    if (json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+									"    if (json.data.tenantId)     pm.collectionVariables.set('tenantId',     json.data.tenantId);",
+									"    pm.collectionVariables.set('currentRole', 'MANAGER');",
+									"    console.log('🟠 Now acting as: MANAGER');",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{\n  \"email\": \"mike.manager@acmecorp.com\",\n  \"password\": \"{{managerPassword}}\"\n}" },
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "🔴 Switch → EMPLOYEE",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Logged in as EMPLOYEE — 200', function () { pm.response.to.have.status(200); });",
+									"const json = pm.response.json();",
+									"if (json.data) {",
+									"    if (json.data.accessToken)  pm.collectionVariables.set('accessToken',  json.data.accessToken);",
+									"    if (json.data.refreshToken) pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+									"    if (json.data.tenantId)     pm.collectionVariables.set('tenantId',     json.data.tenantId);",
+									"    pm.collectionVariables.set('currentRole', 'EMPLOYEE');",
+									"    console.log('🔴 Now acting as: EMPLOYEE');",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [{ "key": "Content-Type", "value": "application/json" }],
+						"body": { "mode": "raw", "raw": "{\n  \"email\": \"eve.employee@acmecorp.com\",\n  \"password\": \"{{employeePassword}}\"\n}" },
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "⏰ 6 — Attendance (clock in/out & reports)",
+			"description": "Test attendance as EMPLOYEE first (clock in/out), then switch to MANAGER/ADMIN to view reports.",
+			"item": [
+				{
+					"name": "Clock In",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Clocked in — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"console.log('⏰ Clock-in recorded as ' + pm.collectionVariables.get('currentRole'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"latitude\": 28.6139,\n  \"longitude\": 77.2090\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/attendance/clock-in", "host": ["{{baseUrl}}"], "path": ["api", "v1", "attendance", "clock-in"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Clock Out",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Clocked out — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"console.log('⏰ Clock-out recorded.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"latitude\": 28.6139,\n  \"longitude\": 77.2090\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/attendance/clock-out", "host": ["{{baseUrl}}"], "path": ["api", "v1", "attendance", "clock-out"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Attendance",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('My attendance — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/attendance/my", "host": ["{{baseUrl}}"], "path": ["api", "v1", "attendance", "my"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get Live Attendance",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Live attendance — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/attendance/live", "host": ["{{baseUrl}}"], "path": ["api", "v1", "attendance", "live"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get Monthly Summary",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Monthly summary — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/attendance/summary?month=2026-07",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "v1", "attendance", "summary"],
+							"query": [{ "key": "month", "value": "2026-07" }]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Employee Attendance by ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Employee attendance — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/attendance/employee/{{regularEmployeeId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "attendance", "employee", "{{regularEmployeeId}}"] }
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🌴 7 — Leave Management",
+			"description": "Full leave lifecycle: Apply (as EMPLOYEE) → Approve/Reject (as MANAGER/HR) → Cancel → Check balance.",
+			"item": [
+				{
+					"name": "Apply Leave (as EMPLOYEE)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Leave applied — 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"const json = pm.response.json();",
+									"if (json.data && json.data.id) {",
+									"    pm.collectionVariables.set('leaveId', json.data.id);",
+									"    console.log('🌴 Leave applied. ID=' + json.data.id);",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"leaveType\": \"CASUAL\",\n  \"startDate\": \"2026-08-01\",\n  \"endDate\": \"2026-08-03\",\n  \"reason\": \"Family vacation\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/leaves", "host": ["{{baseUrl}}"], "path": ["api", "v1", "leaves"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Leaves",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Leaves listed — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/leaves", "host": ["{{baseUrl}}"], "path": ["api", "v1", "leaves"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get Leave by ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Leave fetched — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/leaves/{{leaveId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "leaves", "{{leaveId}}"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Approve Leave (switch to MANAGER first)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Leave approved — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"console.log('✅ Leave approved by ' + pm.collectionVariables.get('currentRole'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/leaves/{{leaveId}}/approve", "host": ["{{baseUrl}}"], "path": ["api", "v1", "leaves", "{{leaveId}}", "approve"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Reject Leave (needs reason)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Leave rejected — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"console.log('❌ Leave rejected by ' + pm.collectionVariables.get('currentRole'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Team needs you during the sprint deadline\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/leaves/{{leaveId}}/reject", "host": ["{{baseUrl}}"], "path": ["api", "v1", "leaves", "{{leaveId}}", "reject"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Leave",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Leave cancelled — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/leaves/{{leaveId}}/cancel", "host": ["{{baseUrl}}"], "path": ["api", "v1", "leaves", "{{leaveId}}", "cancel"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Leave Balance",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Balance fetched — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/leaves/balance", "host": ["{{baseUrl}}"], "path": ["api", "v1", "leaves", "balance"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Get Employee Leave Balance by ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Employee balance fetched — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/leaves/balance/{{regularEmployeeId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "leaves", "balance", "{{regularEmployeeId}}"] }
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "📊 8 — Dashboard (role-specific)",
+			"description": "Each dashboard endpoint is locked to specific roles. Switch roles in folder 5 before testing.\n\n- Admin dashboard → OWNER_ADMIN, ADMIN, HR\n- Manager dashboard → MANAGER\n- Employee dashboard → EMPLOYEE",
+			"item": [
+				{
+					"name": "Admin Dashboard (OWNER_ADMIN / ADMIN / HR)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Admin dashboard — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"console.log('📊 Admin dashboard loaded as ' + pm.collectionVariables.get('currentRole'));"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/dashboard/admin", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "admin"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Manager Dashboard (MANAGER only)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Manager dashboard — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"console.log('📊 Manager dashboard loaded.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/dashboard/manager", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "manager"] }
+					},
+					"response": []
+				},
+				{
+					"name": "Employee Dashboard (EMPLOYEE only)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Employee dashboard — 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"console.log('📊 Employee dashboard loaded.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/dashboard/employee", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "employee"] }
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🔔 9 — Notifications",
+			"description": "Send in-app notifications. Requires authenticate + tenantResolver.",
+			"item": [
+				{
+					"name": "Send Notification",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Notification sent — 202', function () {",
+									"    pm.response.to.have.status(202);",
+									"});",
+									"console.log('🔔 Notification queued.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"recipientId\": \"{{regularEmployeeId}}\",\n  \"message\": \"Welcome aboard! Your onboarding documents are ready.\",\n  \"type\": \"IN_APP\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/notifications", "host": ["{{baseUrl}}"], "path": ["api", "v1", "notifications"] }
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "🚫 10 — Error Scenarios (RBAC & Validation)",
+			"description": "Test that your RBAC and validation actually block unauthorized access. These should FAIL with 401/403/422.",
+			"item": [
+				{
+					"name": "❌ No Auth Token → 401",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Unauthorized without token — 401', function () {",
+									"    pm.response.to.have.status(401);",
+									"});",
+									"console.log('🚫 Correctly blocked: no auth token.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/employees", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Missing X-Tenant-ID → 400",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Bad request without tenant — 400', function () {",
+									"    pm.response.to.have.status(400);",
+									"});",
+									"console.log('🚫 Correctly blocked: missing X-Tenant-ID.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/employees", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees"] }
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Invalid UUID in path → 422",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Validation error — 422 or 400', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+									"});",
+									"console.log('🚫 Correctly blocked: invalid UUID.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/employees/not-a-valid-uuid", "host": ["{{baseUrl}}"], "path": ["api", "v1", "employees", "not-a-valid-uuid"] }
+					},
+					"response": []
+				},
+				{
+					"name": "❌ EMPLOYEE tries Admin Dashboard → 403",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Forbidden for EMPLOYEE — 403', function () {",
+									"    pm.response.to.have.status(403);",
+									"});",
+									"console.log('🚫 Correctly blocked: EMPLOYEE cannot access admin dashboard.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "X-Tenant-ID", "value": "{{tenantId}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/v1/dashboard/admin", "host": ["{{baseUrl}}"], "path": ["api", "v1", "dashboard", "admin"] },
+						"description": "⚠️ Make sure you are logged in as EMPLOYEE (use Role Switch folder) before running this."
+					},
+					"response": []
+				},
+				{
+					"name": "❌ Invalid Registration Body → 422",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Validation error — 422 or 400', function () {",
+									"    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+									"});",
+									"console.log('🚫 Correctly blocked: missing required fields.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"companyName\": \"X\",\n  \"email\": \"not-an-email\",\n  \"password\": \"weak\"\n}"
+						},
+						"url": { "raw": "{{baseUrl}}/api/v1/auth/register-tenant", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "register-tenant"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				},
+				{
+					"name": "❌ 404 Route Not Found",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Route not found — 404', function () {",
+									"    pm.response.to.have.status(404);",
+									"});",
+									"console.log('🚫 Correctly returned 404 for unknown route.');"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": { "raw": "{{baseUrl}}/api/v1/nonexistent", "host": ["{{baseUrl}}"], "path": ["api", "v1", "nonexistent"] },
+						"auth": { "type": "noauth" }
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

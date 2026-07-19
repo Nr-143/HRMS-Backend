@@ -5,52 +5,27 @@ export const clockIn = async (req, res, next) => {
   try {
     const result = await attendanceService.clockIn(req.body);
     sendSuccess(res, result, 'Clock-in recorded successfully', 201);
-  } catch (err) {
-    next(err);
+  } catch (error) {
+    next(error);
   }
 };
 
 export const clockOut = async (req, res, next) => {
   try {
-    const result = await attendanceService.clockOut(req.body);
-    sendSuccess(res, result, 'Clock-out recorded successfully');
-  } catch (err) {
-    next(err);
+    const { attendanceId } = req.body;
+    const result = await attendanceService.clockOut(attendanceId);
+    sendSuccess(res, result, 'Clock-out recorded successfully', 200);
+  } catch (error) {
+    next(error);
   }
 };
 
-export const getMyAttendance = async (req, res, next) => {
+export const getEmployeeLogs = async (req, res, next) => {
   try {
-    const result = await attendanceService.getMyAttendance();
-    sendSuccess(res, result, 'Attendance history retrieved successfully');
-  } catch (err) {
-    next(err);
-  }
-};
-
-export const getEmployeeAttendance = async (req, res, next) => {
-  try {
-    const result = await attendanceService.getEmployeeAttendance(req.params.id, req.scopeFilter);
-    sendSuccess(res, result, 'Employee attendance retrieved successfully');
-  } catch (err) {
-    next(err);
-  }
-};
-
-export const getMonthlySummary = async (req, res, next) => {
-  try {
-    const result = await attendanceService.getMonthlySummary(req.query.month, req.scopeFilter);
-    sendSuccess(res, result, 'Monthly summary retrieved successfully');
-  } catch (err) {
-    next(err);
-  }
-};
-
-export const getLiveAttendance = async (req, res, next) => {
-  try {
-    const result = await attendanceService.getLiveAttendance();
-    sendSuccess(res, result, 'Live attendance retrieved successfully');
-  } catch (err) {
-    next(err);
+    const { employeeId } = req.params;
+    const result = await attendanceService.getEmployeeAttendanceLogs(employeeId);
+    sendSuccess(res, result, 'Attendance logs fetched successfully', 200);
+  } catch (error) {
+    next(error);
   }
 };

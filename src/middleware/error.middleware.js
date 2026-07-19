@@ -1,5 +1,4 @@
 import { sendError } from '../utils/response.utils.js';
-import { env } from '../config/env.js';
 
 /**
  * Express Error-Handling Middleware.
@@ -21,10 +20,7 @@ export const errorHandler = (err, req, res, next) => {
 
     if (err.code === 'P2002') {
       customError.statusCode = 409;
-      customError.message = 'A record with this information already exists';
-      if (env.NODE_ENV === 'development') {
-        customError.debugInfo = `Unique constraint failed on field(s): ${err.meta?.target || 'unknown'}`;
-      }
+      customError.message = `Unique constraint failed on field(s): ${err.meta?.target || 'unknown'}`;
     } else if (err.code === 'P2025') {
       customError.statusCode = 404;
       customError.message = 'The requested database record does not exist';
@@ -36,7 +32,7 @@ export const errorHandler = (err, req, res, next) => {
 
   // Print stack trace for unhandled errors
   if (!err.isOperational) {
-    console.error(' Unhandled Non-Operational Error:', err);
+    console.error('💥 Unhandled Non-Operational Error:', err);
   }
 
   sendError(res, err);
