@@ -71,7 +71,7 @@ class AuthService {
           const clean = companyName.replace(/[^a-zA-Z]/g, '').toUpperCase();
           initials = clean.substring(0, 2).padEnd(2, 'X');
         }
-        const generatedCode = `${initials}-${String(count + 1).padStart(3, '0')}`;
+        const generatedCode = `EMP-${initials}-${String(count + 1).padStart(4, '0')}`;
 
         const employee = await tx.employee.create({
           data: {

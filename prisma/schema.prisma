@@ -60,6 +60,7 @@ model Tenant {
   leaves             Leave[]
   departments        Department[]
   designations       Designation[]
+  leaveBalances      LeaveBalance[]
 
   @@map("tenants")
 }
@@ -103,26 +104,28 @@ model Employee {
   updatedAt      DateTime      @updatedAt
   attendances    Attendance[]
   leaves         Leave[]
-  approvedLeaves Leave[]       @relation("LeaveApprovals")
+  approvedLeaves Leave[]        @relation("LeaveApprovals")
+  leaveBalances  LeaveBalance[]
 
   @@unique([employeeCode, tenantId])
   @@map("employees")
 }
 
 model Attendance {
-  id         String    @id @default(uuid())
-  employeeId String
-  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  tenantId   String
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  date       DateTime  @db.Date
-  clockIn    DateTime  @default(now())
-  clockOut   DateTime?
-  latitude   Float?
-  longitude  Float?
-  createdAt  DateTime  @default(now())
+  id                String    @id @default(uuid())
+  employeeId        String
+  employee          Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  date              DateTime  @db.Date
+  clockIn           DateTime  @default(now())
+  clockOut          DateTime?
+  clockInLatitude   Float?
+  clockInLongitude  Float?
+  clockOutLatitude  Float?
+  clockOutLongitude Float?
+  createdAt         DateTime  @default(now())
 
-  @@unique([employeeId, date])
   @@map("attendances")
 }
 
@@ -170,4 +173,22 @@ model Designation {
 
   @@unique([name, tenantId])
   @@map("designations")
+}
+
+model LeaveBalance {
+  id         String    @id @default(cuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leaveType  LeaveType
+  totalDays  Int       @default(0)
+  usedDays   Int       @default(0)
+  pendingDays Int      @default(0)
+  year       Int
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([employeeId, leaveType, year])
+  @@map("leave_balances")
 }

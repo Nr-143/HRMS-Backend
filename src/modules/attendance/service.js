@@ -19,24 +19,21 @@ class AttendanceService {
       throw new NotFoundError('Employee not found in this company context');
     }
 
-    // 2. Check if already clocked in today without clocking out
+    // 2. Warn if an open session exists (business rule — multiple sessions allowed)
     const activeSession = await this.prisma.attendance.findFirst({
-      where: {
-        employeeId,
-        clockOut: null,
-      },
+      where: { employeeId, clockOut: null },
     });
 
     if (activeSession) {
-      throw new BadRequestError('Employee is already clocked in');
+      throw new BadRequestError('Employee has an open session. Please clock out before clocking in again.');
     }
 
     return await this.prisma.attendance.create({
       data: {
         employeeId,
         date: new Date(),
-        latitude,
-        longitude,
+        clockInLatitude: latitude,
+        clockInLongitude: longitude,
       },
     });
   }
@@ -44,7 +41,7 @@ class AttendanceService {
   /**
    * Log clock-out time for a specific attendance record
    */
-  async clockOut(attendanceId) {
+  async clockOut(attendanceId, { latitude, longitude } = {}) {
     // 1. Find the active clock-in session (scoped to tenant automatically)
     const record = await this.prisma.attendance.findFirst({
       where: { id: attendanceId },
@@ -62,6 +59,8 @@ class AttendanceService {
       where: { id: attendanceId },
       data: {
         clockOut: new Date(),
+        clockOutLatitude: latitude ?? null,
+        clockOutLongitude: longitude ?? null,
       },
     });
   }

@@ -13,6 +13,8 @@ import employeeRoutes from './modules/employee/routes.js';
 import attendanceRoutes from './modules/attendance/routes.js';
 import leaveRoutes from './modules/leave/routes.js';
 import notificationRoutes from './modules/notification/routes.js';
+import departmentRoutes from './modules/department/routes.js';
+import designationRoutes from './modules/designation/routes.js';
 
 import { env } from './config/env.js';
 
@@ -56,6 +58,8 @@ app.use('/api/v1/employees', employeeRoutes);
 app.use('/api/v1/attendance', attendanceRoutes);
 app.use('/api/v1/leaves', leaveRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/departments', departmentRoutes);
+app.use('/api/v1/designations', designationRoutes);
 
 // Catch 404 and forward to error handler
 app.use((req, res, next) => {
