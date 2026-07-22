@@ -223,8 +223,20 @@ class AuthService {
     // Cache session in Redis using tenant-scoped helper
     await cache.set(`sess:${user.id}`, token, env.SESSION_TTL, user.tenantId);
 
+    const refreshToken = jwt.sign(
+      { sub: user.id },
+      env.JWT_REFRESH_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Store refresh token in Redis
+    await this.redis.set(`refresh:${user.id}`, refreshToken, {
+      EX: 7 * 24 * 60 * 60,
+    });
+
     return {
       token,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
