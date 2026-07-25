@@ -18,7 +18,12 @@ const prisma = prismaRaw.$extends({
           return query(args);
         }
 
-        // 2. Bypass tenant filtering if the user is a platform SUPER_ADMIN (allows querying across all tenants)
+        // 2. Bypass tenant filtering for Tenant model itself (Tenant table has primary key 'id', not 'tenantId')
+        if (model === 'Tenant') {
+          return query(args);
+        }
+
+        // 3. Bypass tenant filtering if the user is a platform SUPER_ADMIN (allows querying across all tenants)
         if (context.role === 'SUPER_ADMIN') {
           return query(args);
         }

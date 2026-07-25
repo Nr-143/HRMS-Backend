@@ -19,8 +19,10 @@ class AttendanceService {
    * Clock in — employeeId sourced from JWT context, never from request body.
    * Multiple sessions per day allowed. Warns (but allows) if open session exists.
    */
-  async clockIn({ latitude, longitude }) {
+  async clockIn(payload = {}) {
     const { employeeId } = getContext();
+    const lat = payload.latitude ?? payload.location?.latitude ?? null;
+    const lng = payload.longitude ?? payload.location?.longitude ?? null;
 
     const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId },
@@ -40,8 +42,8 @@ class AttendanceService {
       data: {
         employeeId,
         date: new Date(),
-        clockInLatitude:  latitude  ?? null,
-        clockInLongitude: longitude ?? null,
+        clockInLatitude:  lat,
+        clockInLongitude: lng,
       },
     });
 
@@ -53,8 +55,8 @@ class AttendanceService {
       employeeCode: employee.employeeCode,
       department:   employee.department?.name ?? null,
       clockIn:      record.clockIn,
-      latitude:     latitude  ?? null,
-      longitude:    longitude ?? null,
+      latitude:     lat,
+      longitude:    lng,
     });
 
     return {
@@ -67,8 +69,10 @@ class AttendanceService {
    * Clock out — finds the most recent open session for the JWT employee.
    * No attendanceId required from client.
    */
-  async clockOut({ latitude, longitude }) {
+  async clockOut(payload = {}) {
     const { employeeId } = getContext();
+    const lat = payload.latitude ?? payload.location?.latitude ?? null;
+    const lng = payload.longitude ?? payload.location?.longitude ?? null;
 
     const openSession = await this.prisma.attendance.findFirst({
       where: { employeeId, clockOut: null },
@@ -81,8 +85,8 @@ class AttendanceService {
       where: { id: openSession.id },
       data: {
         clockOut:          new Date(),
-        clockOutLatitude:  latitude  ?? null,
-        clockOutLongitude: longitude ?? null,
+        clockOutLatitude:  lat,
+        clockOutLongitude: lng,
       },
     });
 
@@ -97,8 +101,8 @@ class AttendanceService {
       employeeName: employee ? `${employee.firstName} ${employee.lastName}` : null,
       department:   employee?.department?.name ?? null,
       clockOut:     record.clockOut,
-      latitude:     latitude  ?? null,
-      longitude:    longitude ?? null,
+      latitude:     lat,
+      longitude:    lng,
     });
 
     return record;

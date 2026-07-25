@@ -112,6 +112,9 @@ class AuthService {
         { expiresIn: process.env.JWT_REFRESH_EXPIRES || '7d' }
       );
 
+      // Cache active session in Redis using tenant-scoped helper
+      await cache.set(`sess:${result.user.id}`, accessToken, env.SESSION_TTL, result.tenant.id);
+
       // Store refresh token in Redis
       await this.redis.set(`refresh:${result.user.id}`, refreshToken, {
         EX: 7 * 24 * 60 * 60,

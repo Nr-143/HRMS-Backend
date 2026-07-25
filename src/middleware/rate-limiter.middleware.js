@@ -6,11 +6,11 @@ import { AppError } from '../utils/error.utils.js';
  * Restricts client requests per minute to prevent abuse.
  * Falls back to open access if Redis is unavailable.
  */
-export const createRateLimiter = ({ limit = 100, windowSeconds = 60, prefix = 'rl' } = {}) => {
+export function createRateLimiter({ limit = 100, windowSeconds = 60, prefix = 'rl' } = {}) {
   return async (req, res, next) => {
     try {
       // If Redis connection is not established or ready, bypass rate limiter
-      if (!redisClient.isReady) {
+      if (!redisClient?.isReady) {
         return next();
       }
 
@@ -33,6 +33,8 @@ export const createRateLimiter = ({ limit = 100, windowSeconds = 60, prefix = 'r
       next(); // Fail open to maintain user service availability
     }
   };
-};
+}
 
 export const rateLimiter = createRateLimiter(); // Default global rate limiter
+
+export default createRateLimiter;

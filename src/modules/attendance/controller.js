@@ -20,11 +20,39 @@ export const clockOut = async (req, res, next) => {
   }
 };
 
+export const getMyAttendance = async (req, res, next) => {
+  try {
+    const result = await attendanceService.getMyAttendance();
+    sendSuccess(res, result, 'Attendance logs fetched successfully', 200);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getEmployeeLogs = async (req, res, next) => {
   try {
     const { employeeId } = req.params;
-    const result = await attendanceService.getEmployeeAttendanceLogs(employeeId);
+    const result = await attendanceService.getEmployeeAttendance(employeeId, req.scopeFilter);
     sendSuccess(res, result, 'Attendance logs fetched successfully', 200);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getMonthlySummary = async (req, res, next) => {
+  try {
+    const { month } = req.query;
+    const result = await attendanceService.getMonthlySummary(month, req.scopeFilter);
+    sendSuccess(res, result, 'Monthly summary fetched successfully', 200);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getLiveAttendance = async (req, res, next) => {
+  try {
+    const result = await attendanceService.getLiveAttendance();
+    sendSuccess(res, result, 'Live attendance fetched successfully', 200);
   } catch (error) {
     next(error);
   }

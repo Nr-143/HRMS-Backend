@@ -32,18 +32,88 @@ class EmployeeService {
    * Onboard a new employee.
    * Creates User + Employee + seeds LeaveBalance rows atomically.
    */
-  async createEmployee({ firstName, lastName, departmentId, designationId, dateOfJoining, phone, email, managerId, role = 'EMPLOYEE' }) {
+  async createEmployee(data) {
     const { tenantId } = getContext();
+    let {
+      firstName,
+      lastName,
+      name,
+      departmentId,
+      department: deptInput,
+      designationId,
+      designation: desigInput,
+      dateOfJoining,
+      joinDate,
+      phone,
+      email,
+      managerId,
+      role = 'EMPLOYEE',
+    } = data;
 
-    // 1. Validate department belongs to this tenant
-    const department = await this.prisma.department.findFirst({ where: { id: departmentId } });
-    if (!department) throw new NotFoundError('Department not found in this tenant');
+    // 1. Resolve Name
+    if (!firstName && name) {
+      const parts = name.trim().split(/\s+/);
+      firstName = parts[0] || 'Employee';
+      lastName = parts.slice(1).join(' ') || parts[0] || 'User';
+    }
+    if (!firstName) firstName = 'Employee';
+    if (!lastName) lastName = 'User';
 
-    // 2. Validate designation belongs to this tenant
-    const designation = await this.prisma.designation.findFirst({ where: { id: designationId } });
-    if (!designation) throw new NotFoundError('Designation not found in this tenant');
+    // 2. Resolve Date of Joining
+    const joiningDateStr = dateOfJoining || joinDate || new Date().toISOString();
+    const parsedJoiningDate = new Date(joiningDateStr);
 
-    // 3. Check email not already registered
+    // 3. Resolve Department
+    let deptRecord = null;
+    if (departmentId) {
+      deptRecord = await this.prisma.department.findFirst({ where: { id: departmentId } });
+    }
+    if (!deptRecord && deptInput) {
+      deptRecord = await this.prisma.department.findFirst({
+        where: { OR: [{ id: deptInput }, { name: deptInput }] },
+      });
+      if (!deptRecord) {
+        deptRecord = await this.prisma.department.create({
+          data: { name: deptInput, tenantId },
+        });
+      }
+    }
+    if (!deptRecord) {
+      deptRecord = await this.prisma.department.findFirst({ where: { tenantId } });
+      if (!deptRecord) {
+        deptRecord = await this.prisma.department.create({
+          data: { name: 'General', tenantId },
+        });
+      }
+    }
+    departmentId = deptRecord.id;
+
+    // 4. Resolve Designation
+    let desigRecord = null;
+    if (designationId) {
+      desigRecord = await this.prisma.designation.findFirst({ where: { id: designationId } });
+    }
+    if (!desigRecord && desigInput) {
+      desigRecord = await this.prisma.designation.findFirst({
+        where: { OR: [{ id: desigInput }, { name: desigInput }] },
+      });
+      if (!desigRecord) {
+        desigRecord = await this.prisma.designation.create({
+          data: { name: desigInput, tenantId },
+        });
+      }
+    }
+    if (!desigRecord) {
+      desigRecord = await this.prisma.designation.findFirst({ where: { tenantId } });
+      if (!desigRecord) {
+        desigRecord = await this.prisma.designation.create({
+          data: { name: 'Staff', tenantId },
+        });
+      }
+    }
+    designationId = desigRecord.id;
+
+    // 5. Check email not already registered
     const existingUser = await this.prisma.user.findFirst({ where: { email } });
     if (existingUser) throw new BadRequestError('A user with this email already exists');
 
@@ -75,7 +145,7 @@ class EmployeeService {
           firstName,
           lastName,
           employeeCode,
-          dateOfJoining: new Date(dateOfJoining),
+          dateOfJoining: parsedJoiningDate,
           phone: phone || null,
           departmentId,
           designationId,

@@ -25,9 +25,23 @@ const app = express();
 app.use(helmet());
 app.use(
   cors({
-    origin: env.CORS_ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID'],
+    origin: (origin, callback) => {
+      if (!origin || env.NODE_ENV === 'development') {
+        return callback(null, true);
+      }
+      const allowed = env.CORS_ALLOWED_ORIGINS?.split(',') || [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://localhost:8081',
+        'http://localhost:8080',
+      ];
+      if (allowed.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('CORS origin forbidden'), false);
+    },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-ID', 'X-Requested-With'],
     credentials: true,
     maxAge: 86400,
   })
