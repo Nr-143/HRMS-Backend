@@ -64,6 +64,7 @@ model Tenant {
   designations       Designation[]
   leaveBalances      LeaveBalance[]
   leaveApprovalLogs  LeaveApprovalLog[]
+  reportingHistory   EmployeeReportingHistory[]
 
   @@map("tenants")
 }
@@ -85,32 +86,36 @@ model User {
 }
 
 model Employee {
-  id              String             @id @default(uuid())
-  firstName       String
-  lastName        String
-  employeeCode    String
-  phone           String?
-  dateOfJoining   DateTime
-  isActive        Boolean            @default(true)
-  userId          String?            @unique
-  user            User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
-  departmentId    String?
-  department      Department?        @relation(fields: [departmentId], references: [id])
-  designationId   String?
-  designation     Designation?       @relation(fields: [designationId], references: [id])
-  headOfDept      Department?        @relation("DeptHOD")
-  managerId       String?
-  manager         Employee?          @relation("Reports", fields: [managerId], references: [id])
-  reportees       Employee[]         @relation("Reports")
-  tenantId        String
-  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  attendances     Attendance[]
-  leaves          Leave[]
-  approvedLeaves  Leave[]            @relation("LeaveApprovals")
-  approvalActions LeaveApprovalLog[] @relation("ApprovalActions")
-  leaveBalances   LeaveBalance[]
+  id                 String                     @id @default(uuid())
+  firstName          String
+  lastName           String
+  employeeCode       String
+  phone              String?
+  dateOfJoining      DateTime
+  isActive           Boolean                    @default(true)
+  userId             String?                    @unique
+  user               User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  departmentId       String?
+  department         Department?                @relation(fields: [departmentId], references: [id])
+  designationId      String?
+  designation        Designation?               @relation(fields: [designationId], references: [id])
+  headOfDept         Department?                @relation("DeptHOD")
+  managerId          String?
+  manager            Employee?                  @relation("Reports", fields: [managerId], references: [id])
+  reportees          Employee[]                 @relation("Reports")
+  tenantId           String
+  tenant             Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+  attendances        Attendance[]
+  leaves             Leave[]
+  approvedLeaves     Leave[]                    @relation("LeaveApprovals")
+  approvalActions    LeaveApprovalLog[]         @relation("ApprovalActions")
+  leaveBalances      LeaveBalance[]
+  reportingHistory   EmployeeReportingHistory[] @relation("ReportingHistory")
+  oldManagerHistory  EmployeeReportingHistory[] @relation("OldManagerHistory")
+  newManagerHistory  EmployeeReportingHistory[] @relation("NewManagerHistory")
+  changedByHistory   EmployeeReportingHistory[] @relation("ChangedByHistory")
 
   @@unique([employeeCode, tenantId])
   @@map("employees")
@@ -220,4 +225,23 @@ model LeaveApprovalLog {
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("leave_approval_logs")
+}
+
+model EmployeeReportingHistory {
+  id                   String    @id @default(cuid())
+  employeeId           String
+  employee             Employee  @relation("ReportingHistory", fields: [employeeId], references: [id], onDelete: Cascade)
+  oldManagerId         String?
+  oldManager           Employee? @relation("OldManagerHistory", fields: [oldManagerId], references: [id], onDelete: SetNull)
+  newManagerId         String?
+  newManager           Employee? @relation("NewManagerHistory", fields: [newManagerId], references: [id], onDelete: SetNull)
+  changedById          String
+  changedBy            Employee  @relation("ChangedByHistory", fields: [changedById], references: [id], onDelete: Cascade)
+  reason               String?
+  reassignedLeaveCount Int       @default(0)
+  changedAt            DateTime  @default(now())
+  tenantId             String
+  tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("employee_reporting_history")
 }

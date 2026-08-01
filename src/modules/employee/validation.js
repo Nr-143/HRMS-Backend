@@ -40,3 +40,13 @@ export const idParamSchema = z.object({
     id: z.string().uuid('Invalid Employee UUID'),
   }),
 });
+
+export const updateReportingManagerSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid Employee UUID'),
+  }),
+  body: z.object({
+    newManagerId: z.string().uuid('Invalid Manager UUID').nullable().optional(),
+    reason: z.string().max(500).optional().nullable(),
+  }),
+});

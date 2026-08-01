@@ -63,3 +63,27 @@ export const getOrgChart = async (req, res, next) => {
     next(err);
   }
 };
+
+export const updateReportingManager = async (req, res, next) => {
+  try {
+    const { newManagerId, reason } = req.body;
+    const result = await employeeService.updateReportingManager(
+      req.params.id,
+      newManagerId,
+      req.user.employeeId || req.user.id,
+      reason
+    );
+    sendSuccess(res, result, 'Reporting manager updated successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getReportingHistory = async (req, res, next) => {
+  try {
+    const result = await employeeService.getReportingHistory(req.params.id);
+    sendSuccess(res, result, 'Reporting history retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+};

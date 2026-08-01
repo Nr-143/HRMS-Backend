@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { NotFoundError, BadRequestError, ForbiddenError } from '../../utils/error.utils.js';
 import { cache } from '../../utils/cache.utils.js';
 import { getContext } from '../../utils/context.utils.js';
+import eventBus from '../../utils/eventBus.utils.js';
 
 const LEAVE_BALANCE_SEEDS = [
   { leaveType: 'CASUAL', totalDays: 12 },
@@ -359,6 +360,144 @@ class EmployeeService {
     });
 
     return roots;
+  }
+
+  /**
+   * Dedicated Reporting Manager Update.
+   * Includes circular reporting chain check, level-0 pending leave reassignment logging, and history audit trail.
+   */
+  async updateReportingManager(employeeId, newManagerId, changedById, reason) {
+    const { tenantId } = getContext() || {};
+
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: employeeId, ...(tenantId ? { tenantId } : {}) },
+      include: { user: true },
+    });
+
+    if (!employee) throw new NotFoundError('Employee not found');
+    if (!employee.isActive) throw new BadRequestError('Employee is inactive');
+    if (employee.user?.isOwner) {
+      throw new ForbiddenError('Cannot change reporting manager of the account owner');
+    }
+
+    if (newManagerId) {
+      const newManager = await this.prisma.employee.findFirst({
+        where: { id: newManagerId, ...(tenantId ? { tenantId } : {}) },
+      });
+      if (!newManager) throw new NotFoundError('New reporting manager not found');
+      if (!newManager.isActive) throw new BadRequestError('Selected manager is inactive');
+
+      if (newManagerId === employeeId) {
+        throw new BadRequestError('Employee cannot report to themselves');
+      }
+
+      // Circular reporting chain check (while loop up the manager chain)
+      let currId = newManagerId;
+      const visited = new Set();
+      while (currId) {
+        if (currId === employeeId) {
+          throw new BadRequestError('This creates a circular reporting chain');
+        }
+        if (visited.has(currId)) break;
+        visited.add(currId);
+        const parent = await this.prisma.employee.findFirst({
+          where: { id: currId },
+          select: { managerId: true },
+        });
+        currId = parent?.managerId || null;
+      }
+    }
+
+    const oldManagerId = employee.managerId;
+
+    const { updatedEmployee, pendingLeaves, historyEntry } = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.employee.update({
+        where: { id: employeeId },
+        data: { managerId: newManagerId || null },
+        include: {
+          manager: { select: { id: true, firstName: true, lastName: true } },
+          department: { select: { id: true, name: true } },
+        },
+      });
+
+      const pending = await tx.leave.findMany({
+        where: {
+          employeeId,
+          status: 'PENDING',
+          currentApprovalLevel: 0,
+        },
+      });
+
+      for (const leave of pending) {
+        await tx.leaveApprovalLog.create({
+          data: {
+            leaveId: leave.id,
+            approverId: changedById,
+            approverRole: 'ADMIN',
+            level: 0,
+            action: 'REASSIGNED',
+            comment: 'Reassigned to new manager due to reporting change',
+            tenantId: tenantId || employee.tenantId,
+          },
+        });
+      }
+
+      const history = await tx.employeeReportingHistory.create({
+        data: {
+          employeeId,
+          oldManagerId,
+          newManagerId: newManagerId || null,
+          changedById,
+          reason: reason || null,
+          reassignedLeaveCount: pending.length,
+          tenantId: tenantId || employee.tenantId,
+        },
+        include: {
+          oldManager: { select: { firstName: true, lastName: true } },
+          newManager: { select: { firstName: true, lastName: true } },
+          changedBy: { select: { firstName: true, lastName: true } },
+        },
+      });
+
+      return { updatedEmployee: updated, pendingLeaves: pending, historyEntry: history };
+    });
+
+    eventBus.emit('employee.managerChanged', {
+      employeeId,
+      oldManagerId,
+      newManagerId,
+      changedById,
+      reassignedCount: pendingLeaves.length,
+      tenantId: tenantId || employee.tenantId,
+    });
+
+    await cache.del('employees:list');
+    await cache.del(`employee:${employeeId}`);
+
+    return {
+      employee: updatedEmployee,
+      reassignedLeaveCount: pendingLeaves.length,
+      history: historyEntry,
+    };
+  }
+
+  /**
+   * Get employee reporting manager change history.
+   */
+  async getReportingHistory(employeeId) {
+    const { tenantId } = getContext() || {};
+    return this.prisma.employeeReportingHistory.findMany({
+      where: {
+        employeeId,
+        ...(tenantId ? { tenantId } : {}),
+      },
+      include: {
+        oldManager: { select: { firstName: true, lastName: true } },
+        newManager: { select: { firstName: true, lastName: true } },
+        changedBy: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { changedAt: 'desc' },
+    });
   }
 }
 
