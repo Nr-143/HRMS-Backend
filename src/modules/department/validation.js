@@ -26,3 +26,12 @@ export const idParamSchema = z.object({
     id: z.string().uuid('Invalid Department UUID'),
   }),
 });
+
+export const assignHodSchema = z.object({
+  params: z.object({
+    id: z.string().uuid('Invalid Department UUID'),
+  }),
+  body: z.object({
+    employeeId: z.string().uuid('Invalid Employee UUID'),
+  }),
+});

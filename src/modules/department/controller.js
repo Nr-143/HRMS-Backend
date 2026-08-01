@@ -45,3 +45,30 @@ export const deleteDepartment = async (req, res, next) => {
     next(err);
   }
 };
+
+export const assignHOD = async (req, res, next) => {
+  try {
+    const result = await departmentService.assignHOD(req.params.id, req.body.employeeId);
+    sendSuccess(res, result, 'Department HOD assigned successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const removeHOD = async (req, res, next) => {
+  try {
+    const result = await departmentService.removeHOD(req.params.id);
+    sendSuccess(res, result, 'Department HOD removed successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getManagersByDepartment = async (req, res, next) => {
+  try {
+    const result = await departmentService.getManagersByDepartment(req.params.id);
+    sendSuccess(res, result, 'Department managers retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+};

@@ -38,6 +38,8 @@ enum LeaveType {
 
 enum LeaveStatus {
   PENDING
+  L1_APPROVED
+  L2_APPROVED
   APPROVED
   REJECTED
   CANCELLED
@@ -61,6 +63,7 @@ model Tenant {
   departments        Department[]
   designations       Designation[]
   leaveBalances      LeaveBalance[]
+  leaveApprovalLogs  LeaveApprovalLog[]
 
   @@map("tenants")
 }
@@ -82,30 +85,32 @@ model User {
 }
 
 model Employee {
-  id             String        @id @default(uuid())
-  firstName      String
-  lastName       String
-  employeeCode   String
-  phone          String?
-  dateOfJoining  DateTime
-  isActive       Boolean       @default(true)
-  userId         String?       @unique
-  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  departmentId   String?
-  department     Department?   @relation(fields: [departmentId], references: [id])
-  designationId  String?
-  designation    Designation?  @relation(fields: [designationId], references: [id])
-  managerId      String?
-  manager        Employee?     @relation("Reports", fields: [managerId], references: [id])
-  reportees      Employee[]    @relation("Reports")
-  tenantId       String
-  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  attendances    Attendance[]
-  leaves         Leave[]
-  approvedLeaves Leave[]        @relation("LeaveApprovals")
-  leaveBalances  LeaveBalance[]
+  id              String             @id @default(uuid())
+  firstName       String
+  lastName        String
+  employeeCode    String
+  phone           String?
+  dateOfJoining   DateTime
+  isActive        Boolean            @default(true)
+  userId          String?            @unique
+  user            User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  departmentId    String?
+  department      Department?        @relation(fields: [departmentId], references: [id])
+  designationId   String?
+  designation     Designation?       @relation(fields: [designationId], references: [id])
+  headOfDept      Department?        @relation("DeptHOD")
+  managerId       String?
+  manager         Employee?          @relation("Reports", fields: [managerId], references: [id])
+  reportees       Employee[]         @relation("Reports")
+  tenantId        String
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  attendances     Attendance[]
+  leaves          Leave[]
+  approvedLeaves  Leave[]            @relation("LeaveApprovals")
+  approvalActions LeaveApprovalLog[] @relation("ApprovalActions")
+  leaveBalances   LeaveBalance[]
 
   @@unique([employeeCode, tenantId])
   @@map("employees")
@@ -130,23 +135,26 @@ model Attendance {
 }
 
 model Leave {
-  id         String      @id @default(uuid())
-  employeeId String
-  employee   Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  tenantId   String
-  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  startDate  DateTime
-  endDate    DateTime
-  type       LeaveType   @default(CASUAL)
-  status     LeaveStatus @default(PENDING)
-  reason          String?
-  rejectionReason String?
-  requestedDays   Int         @default(1)
-  approverId      String?
-  approver        Employee?   @relation("LeaveApprovals", fields: [approverId], references: [id])
-  approvedAt      DateTime?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id                   String             @id @default(uuid())
+  employeeId           String
+  employee             Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tenantId             String
+  tenant               Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  startDate            DateTime
+  endDate              DateTime
+  type                 LeaveType          @default(CASUAL)
+  status               LeaveStatus        @default(PENDING)
+  reason               String?
+  rejectionReason      String?
+  requestedDays        Int                @default(1)
+  currentApprovalLevel Int                @default(0)
+  totalApprovalLevels  Int                @default(2)
+  approverId           String?
+  approver             Employee?          @relation("LeaveApprovals", fields: [approverId], references: [id])
+  approvedAt           DateTime?
+  approvalLogs         LeaveApprovalLog[]
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   @@map("leaves")
 }
@@ -156,6 +164,8 @@ model Department {
   name      String
   tenantId  String
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  hodId     String?    @unique
+  hod       Employee?  @relation("DeptHOD", fields: [hodId], references: [id])
   employees Employee[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
@@ -178,19 +188,36 @@ model Designation {
 }
 
 model LeaveBalance {
-  id         String    @id @default(cuid())
-  employeeId String
-  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  tenantId   String
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  leaveType  LeaveType
-  totalDays  Int       @default(0)
-  usedDays   Int       @default(0)
-  pendingDays Int      @default(0)
-  year       Int
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType
+  totalDays   Int       @default(0)
+  usedDays    Int       @default(0)
+  pendingDays Int       @default(0)
+  year        Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([employeeId, leaveType, year])
   @@map("leave_balances")
+}
+
+model LeaveApprovalLog {
+  id           String   @id @default(cuid())
+  leaveId      String
+  leave        Leave    @relation(fields: [leaveId], references: [id], onDelete: Cascade)
+  approverId   String
+  approver     Employee @relation("ApprovalActions", fields: [approverId], references: [id])
+  approverRole String
+  level        Int
+  action       String
+  comment      String?
+  actedAt      DateTime @default(now())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("leave_approval_logs")
 }

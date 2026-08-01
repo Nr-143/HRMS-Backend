@@ -346,3 +346,50 @@ Because every consumer (controllers, middleware, other modules) imports `authSer
 
 #### Step 4: Routing & API Gateway
 Update the API gateway or reverse proxy (e.g., Nginx, Kong, Traefik) to route traffic starting with `/api/v1/auth` to the new `auth-service` container, while routing other endpoints (e.g., `/api/v1/employees`) to the monolith.
+
+---
+
+## 4. Department HOD & Multi-Level Leave Approval Architecture
+
+### 4.1 Department Head of Department (HOD) Model
+Each `Department` record maintains a 1-to-1 relation with an `Employee` who acts as the Head of Department (`hodId`).
+- `hodId` is nullable (a department can exist prior to assigning an HOD).
+- Relation `DeptHOD`: `Department.hodId` (unique) ↔ `Employee.headOfDept`.
+
+### 4.2 Multi-Level Leave Approval Chain Workflow
+
+#### Extended `LeaveStatus` Enum State Machine:
+- `PENDING`: Initial state when leave is requested.
+- `L1_APPROVED`: Approved by Direct Manager (Level 1), waiting for HOD or HR.
+- `L2_APPROVED`: Approved by HOD (Level 2), waiting for HR/Admin final approval.
+- `APPROVED`: Fully approved by HR / Admin. **Leave balances are deducted only at this final state.**
+- `REJECTED`: Rejected at any stage in the chain.
+- `CANCELLED`: Cancelled by applicant prior to final approval.
+
+#### Dynamic Approval Level Determination Matrix:
+When a leave request is submitted, `totalApprovalLevels` is calculated dynamically:
+
+| Manager Assigned? | Dept HOD Assigned? | Is Manager the HOD? | `totalApprovalLevels` | Approval Chain |
+|---|---|---|---|---|
+| ❌ No | ❌ No | N/A | **1** | HR / Admin only |
+| ✅ Yes | ❌ No | N/A | **2** | Direct Manager (`L1_APPROVED`) → HR / Admin (`APPROVED`) |
+| ✅ Yes | ✅ Yes | ❌ No (Different) | **3** | Direct Manager (`L1_APPROVED`) → HOD (`L2_APPROVED`) → HR / Admin (`APPROVED`) |
+| ✅ Yes | ✅ Yes | ✅ Yes (Same) | **2** | HOD (`L1_APPROVED` / `L2_APPROVED`) → HR / Admin (`APPROVED`) |
+
+### 4.3 Leave Approval Audit Trail (`leave_approval_logs`)
+Every action in the approval pipeline is recorded in the `LeaveApprovalLog` table:
+- `leaveId`: Relates to target `Leave`.
+- `approverId`: Employee ID of acting approver.
+- `approverRole`: Role of approver at decision time (`MANAGER`, `HOD`, `HR`, `ADMIN`).
+- `level`: Approval level (`1`, `2`, or `3`).
+- `action`: Resulting action (`APPROVED`, `REJECTED`, `BYPASSED`).
+- `comment`: Optional notes provided by approver.
+- `actedAt`: Timestamp of action.
+- `tenantId`: Bounded tenant context for multi-tenant isolation.
+
+### 4.4 Department HOD & Department Managers API Endpoints
+- `PATCH /api/v1/departments/:id/hod`: Assign an HOD to a department (Requires `employeeId` in body; validates that employee belongs to the department and holds a Manager role or above).
+- `DELETE /api/v1/departments/:id/hod`: Unassign HOD from a department.
+- `GET /api/v1/departments/:id/managers`: Returns active employees within the department holding `MANAGER` role or above (`OWNER_ADMIN`, `ADMIN`, `HR`, `MANAGER`). Used by the frontend employee onboarding form to populate the reporting manager dropdown dynamically when a department is selected.
+
+
