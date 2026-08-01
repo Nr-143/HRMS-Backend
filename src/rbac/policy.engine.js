@@ -31,9 +31,21 @@ export const getScopeFilter = (context, resource, action) => {
       // If querying the employee model itself, filter by managerId directly.
       // Otherwise, filter by employee relation's managerId.
       if (resource === 'employee') {
-        return { managerId: employeeId };
+        return {
+          OR: [
+            { managerId: employeeId },
+            { department: { hodId: employeeId } }
+          ]
+        };
       }
-      return { employee: { managerId: employeeId } };
+      return {
+        employee: {
+          OR: [
+            { managerId: employeeId },
+            { department: { hodId: employeeId } }
+          ]
+        }
+      };
     case 'self':
       // If querying the employee model itself, check ID matches.
       // Otherwise, check employeeId field matches.

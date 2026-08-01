@@ -32,7 +32,8 @@ export const getLeaveById = async (req, res, next) => {
 export const approveLeave = async (req, res, next) => {
   try {
     const { employeeId, role } = getContext();
-    const result = await leaveService.approve(req.params.id, employeeId, role);
+    const comment = req.body?.comment || req.body?.reason || null;
+    const result = await leaveService.approve(req.params.id, employeeId, role, comment);
     sendSuccess(res, result, 'Leave approved successfully');
   } catch (err) {
     next(err);
@@ -42,7 +43,8 @@ export const approveLeave = async (req, res, next) => {
 export const rejectLeave = async (req, res, next) => {
   try {
     const { employeeId, role } = getContext();
-    const result = await leaveService.reject(req.params.id, employeeId, role, req.body.reason);
+    const comment = req.body?.comment || req.body?.reason || null;
+    const result = await leaveService.reject(req.params.id, employeeId, role, comment);
     sendSuccess(res, result, 'Leave rejected successfully');
   } catch (err) {
     next(err);
@@ -54,6 +56,15 @@ export const cancelLeave = async (req, res, next) => {
     const { employeeId, role } = getContext();
     const result = await leaveService.cancel(req.params.id, employeeId, role);
     sendSuccess(res, result, 'Leave cancelled successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getLeavesPendingMyAction = async (req, res, next) => {
+  try {
+    const result = await leaveService.getLeavesPendingMyAction();
+    sendSuccess(res, result, 'Pending leaves for your action retrieved successfully');
   } catch (err) {
     next(err);
   }

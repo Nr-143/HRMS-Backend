@@ -6,6 +6,7 @@ import {
   approveLeave,
   rejectLeave,
   cancelLeave,
+  getLeavesPendingMyAction,
   getMyBalance,
   getEmployeeBalance,
 } from './controller.js';
@@ -23,6 +24,7 @@ router.use(tenantResolver);
 router.use(checkSubscription);
 
 // Static routes before /:id to prevent shadowing
+router.get('/pending-my-action',                                           getLeavesPendingMyAction);
 router.get('/balance',                                                    authorize('leave', 'read'),    getMyBalance);
 router.get('/balance/:employeeId', validate(employeeIdParamSchema),       authorize('leave', 'read'),    getEmployeeBalance);
 

@@ -392,4 +392,11 @@ Every action in the approval pipeline is recorded in the `LeaveApprovalLog` tabl
 - `DELETE /api/v1/departments/:id/hod`: Unassign HOD from a department.
 - `GET /api/v1/departments/:id/managers`: Returns active employees within the department holding `MANAGER` role or above (`OWNER_ADMIN`, `ADMIN`, `HR`, `MANAGER`). Used by the frontend employee onboarding form to populate the reporting manager dropdown dynamically when a department is selected.
 
+### 4.5 Multi-Level Leave Approval Engine & Endpoints
+- `POST /api/v1/leaves`: Calculates `totalApprovalLevels` dynamically based on reporting manager and HOD configuration (1, 2, or 3 levels), seeds initial `currentApprovalLevel: 0`, and holds `pendingDays` in `LeaveBalance`.
+- `POST /api/v1/leaves/:id/approve`: Progresses the approval state machine (Level 1 `L1_APPROVED`, Level 2 `L2_APPROVED`, Level 3 `APPROVED`). Creates a `LeaveApprovalLog` entry at each level and deducts `usedDays` upon final level or Admin bypass.
+- `POST /api/v1/leaves/:id/reject`: Rejects the leave request at any level, creates a `LeaveApprovalLog` entry, releases `pendingDays`, and terminates the approval chain.
+- `GET /api/v1/leaves/pending-my-action`: Returns all active leave requests requiring immediate action from the logged-in user based on their role and position in the approval chain.
+
+
 
