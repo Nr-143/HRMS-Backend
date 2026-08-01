@@ -30,7 +30,14 @@ class DesignationService {
   }
 
   async findAll() {
-    return await this.prisma.designation.findMany({ orderBy: { name: 'asc' } });
+    return await this.prisma.designation.findMany({
+      orderBy: { name: 'asc' },
+      include: {
+        _count: {
+          select: { employees: true },
+        },
+      },
+    });
   }
 
   async update(id, { name }) {

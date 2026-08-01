@@ -117,7 +117,9 @@ class EmployeeService {
     const existingUser = await this.prisma.user.findFirst({ where: { email } });
     if (existingUser) throw new BadRequestError('A user with this email already exists');
 
-    const tempPassword = await bcrypt.hash(`Temp@${Date.now()}`, 10);
+    // Generate a readable temp password and keep the plain-text to return to admin
+    const plainPassword = `Emp@${Math.floor(1000 + Math.random() * 9000)}`;
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
     const year = new Date().getFullYear();
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -125,7 +127,7 @@ class EmployeeService {
       const user = await tx.user.create({
         data: {
           email,
-          password: tempPassword,
+          password: hashedPassword,
           role,
           isOwner: false,
           isActive: true,
@@ -174,8 +176,8 @@ class EmployeeService {
 
     await cache.del('employees:list');
 
-    // Return full profile
-    return await this.prisma.employee.findFirst({
+    // Return full profile + plain password (shown once to admin)
+    const fullEmployee = await this.prisma.employee.findFirst({
       where: { id: result.employee.id },
       include: {
         user:         { select: { id: true, email: true, role: true } },
@@ -184,6 +186,8 @@ class EmployeeService {
         leaveBalances: true,
       },
     });
+
+    return { ...fullEmployee, tempPassword: plainPassword };
   }
 
   /**
