@@ -48,5 +48,18 @@ export const cache = {
       console.error('Cache Del Error:', err.message);
     }
   },
+
+  async delByPrefix(prefix, tenantIdOverride = null) {
+    try {
+      if (!redisClient.isReady) return;
+      const scopedPrefix = this.getScopedKey(prefix, tenantIdOverride);
+      const keys = await redisClient.keys(`${scopedPrefix}*`);
+      if (keys && keys.length > 0) {
+        await redisClient.del(keys);
+      }
+    } catch (err) {
+      console.error('Cache DelByPrefix Error:', err.message);
+    }
+  },
 };
 export default cache;

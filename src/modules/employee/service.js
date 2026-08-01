@@ -175,7 +175,7 @@ class EmployeeService {
       return { employee, user };
     });
 
-    await cache.del('employees:list');
+    await cache.delByPrefix('employees:list');
 
     // Return full profile + plain password (shown once to admin)
     const fullEmployee = await this.prisma.employee.findFirst({
@@ -226,7 +226,7 @@ class EmployeeService {
       },
     });
 
-    await cache.del('employees:list');
+    await cache.delByPrefix('employees:list');
     await cache.del(`employee:${id}`);
     return updated;
   }
@@ -250,7 +250,7 @@ class EmployeeService {
       data: { isActive: false },
     });
 
-    await cache.del('employees:list');
+    await cache.delByPrefix('employees:list');
     await cache.del(`employee:${id}`);
     return updated;
   }
@@ -268,7 +268,7 @@ class EmployeeService {
       data: { isActive: true },
     });
 
-    await cache.del('employees:list');
+    await cache.delByPrefix('employees:list');
     await cache.del(`employee:${id}`);
     return updated;
   }
@@ -471,7 +471,7 @@ class EmployeeService {
       tenantId: tenantId || employee.tenantId,
     });
 
-    await cache.del('employees:list');
+    await cache.delByPrefix('employees:list');
     await cache.del(`employee:${employeeId}`);
 
     return {
