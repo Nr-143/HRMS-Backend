@@ -300,12 +300,17 @@ class EmployeeService {
    * List all employees, scoped by RBAC filter.
    */
   async getAllEmployees(scopeFilter) {
-    const cacheKey = 'employees:list';
+    const { tenantId, userId, role } = getContext() || {};
+    const scopeStr = JSON.stringify(scopeFilter || {});
+    const cacheKey = `employees:list:${role || 'ALL'}:${userId || 'ALL'}:${scopeStr}`;
     const cached = await cache.get(cacheKey);
     if (cached) return cached;
 
     const employees = await this.prisma.employee.findMany({
-      where: { ...scopeFilter },
+      where: {
+        ...(tenantId ? { tenantId } : {}),
+        ...scopeFilter,
+      },
       orderBy: { lastName: 'asc' },
       include: {
         department:  { select: { id: true, name: true } },
@@ -322,8 +327,12 @@ class EmployeeService {
    * Each node: { id, firstName, lastName, employeeCode, designation, department, children }
    */
   async getOrgChart() {
+    const { tenantId } = getContext() || {};
     const employees = await this.prisma.employee.findMany({
-      where: { isActive: true },
+      where: {
+        isActive: true,
+        ...(tenantId ? { tenantId } : {}),
+      },
       select: {
         id: true,
         firstName: true,
