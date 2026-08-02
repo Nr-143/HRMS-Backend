@@ -46,16 +46,16 @@ enum LeaveStatus {
 }
 
 model Tenant {
-  id                 String             @id @default(uuid())
+  id                 String                     @id @default(uuid())
   name               String
-  domain             String?            @unique
-  subscriptionStatus SubscriptionStatus @default(TRIAL)
-  plan               Plan               @default(FREE)
+  domain             String?                    @unique
+  subscriptionStatus SubscriptionStatus         @default(TRIAL)
+  plan               Plan                       @default(FREE)
   trialEndsAt        DateTime
   planExpiresAt      DateTime?
-  maxEmployees       Int                @default(5)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  maxEmployees       Int                        @default(5)
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
   users              User[]
   employees          Employee[]
   attendances        Attendance[]
@@ -65,6 +65,7 @@ model Tenant {
   leaveBalances      LeaveBalance[]
   leaveApprovalLogs  LeaveApprovalLog[]
   reportingHistory   EmployeeReportingHistory[]
+  dailyQuotes        DailyQuote[]
 
   @@map("tenants")
 }
@@ -244,4 +245,17 @@ model EmployeeReportingHistory {
   tenant               Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("employee_reporting_history")
+}
+
+model DailyQuote {
+  id        String   @id @default(uuid())
+  text      String
+  author    String
+  isActive  Boolean  @default(false)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("daily_quotes")
 }

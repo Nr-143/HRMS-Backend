@@ -11,19 +11,20 @@ router.use(authenticate);
 router.use(tenantResolver);
 router.use(checkSubscription);
 
-/**
- * Inline role guard — dashboard endpoints are not in the RBAC abilities matrix.
- * Simpler than adding a 'dashboard' resource to abilities.js for 3 read-only endpoints.
- */
 const allowRoles = (...roles) => (req, res, next) => {
-  if (!roles.includes(req.user.role)) {
+  if (!req.user || !roles.includes(req.user.role)) {
     return next(new ForbiddenError(`Access denied. Required roles: ${roles.join(', ')}`));
   }
   next();
 };
 
-router.get('/admin',    allowRoles('OWNER_ADMIN', 'ADMIN', 'HR'),  getAdminDashboard);
-router.get('/manager',  allowRoles('MANAGER'),                      getManagerDashboard);
-router.get('/employee', allowRoles('EMPLOYEE'),                     getEmployeeDashboard);
+// GET /dashboard/admin -> authenticate, checkSubscription, allowRoles('OWNER_ADMIN','ADMIN','HR')
+router.get('/admin', allowRoles('OWNER_ADMIN', 'ADMIN', 'HR'), getAdminDashboard);
+
+// GET /dashboard/manager -> authenticate, checkSubscription, allowRoles('OWNER_ADMIN','ADMIN','HR','MANAGER')
+router.get('/manager', allowRoles('OWNER_ADMIN', 'ADMIN', 'HR', 'MANAGER'), getManagerDashboard);
+
+// GET /dashboard/employee -> authenticate, checkSubscription (all roles can see own employee dashboard)
+router.get('/employee', getEmployeeDashboard);
 
 export default router;

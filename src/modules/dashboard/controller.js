@@ -3,7 +3,7 @@ import { sendSuccess } from '../../utils/response.utils.js';
 
 export const getAdminDashboard = async (req, res, next) => {
   try {
-    const result = await dashboardService.getAdminDashboard();
+    const result = await dashboardService.getAdminDashboard(req.user);
     sendSuccess(res, result, 'Admin dashboard retrieved successfully');
   } catch (err) {
     next(err);
@@ -12,7 +12,7 @@ export const getAdminDashboard = async (req, res, next) => {
 
 export const getManagerDashboard = async (req, res, next) => {
   try {
-    const result = await dashboardService.getManagerDashboard();
+    const result = await dashboardService.getManagerDashboard(req.user);
     sendSuccess(res, result, 'Manager dashboard retrieved successfully');
   } catch (err) {
     next(err);
@@ -21,7 +21,7 @@ export const getManagerDashboard = async (req, res, next) => {
 
 export const getEmployeeDashboard = async (req, res, next) => {
   try {
-    const result = await dashboardService.getEmployeeDashboard();
+    const result = await dashboardService.getEmployeeDashboard(req.user);
     sendSuccess(res, result, 'Employee dashboard retrieved successfully');
   } catch (err) {
     next(err);

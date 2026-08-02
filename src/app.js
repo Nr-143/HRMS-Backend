@@ -16,6 +16,7 @@ import notificationRoutes from './modules/notification/routes.js';
 import departmentRoutes from './modules/department/routes.js';
 import designationRoutes from './modules/designation/routes.js';
 import dashboardRoutes from './modules/dashboard/routes.js';
+import quoteRoutes from './modules/quote/routes.js';
 
 import { env } from './config/env.js';
 
@@ -76,6 +77,7 @@ app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/departments', departmentRoutes);
 app.use('/api/v1/designations', designationRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
+app.use('/api/v1/quotes', quoteRoutes);
 
 // Catch 404 and forward to error handler
 app.use((req, res, next) => {
