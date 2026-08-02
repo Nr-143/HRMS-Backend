@@ -9,6 +9,7 @@ class DashboardService {
    *  METHOD 1: getAdminDashboard(requestingUser)
    * ════════════════════════════════════════════════════════════════════════ */
   async getAdminDashboard(requestingUser = {}) {
+    const userId = requestingUser.sub || requestingUser.id || requestingUser.userId;
     const now = new Date();
     const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
     const endOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
@@ -24,7 +25,8 @@ class DashboardService {
       pendingMyAction,
       departmentBreakdownRaw,
       recentLeaves,
-      subscription
+      subscription,
+      profile
     ] = await Promise.all([
       // 1. Total active employees in tenant
       this.prisma.employee.count({ where: { isActive: true } }),
@@ -32,7 +34,10 @@ class DashboardService {
       // 2. Clocked in right now (clockOut is null, date is today)
       this.prisma.attendance.count({
         where: {
-          date: { gte: startOfToday, lte: endOfToday },
+          OR: [
+            { date: { gte: startOfToday, lte: endOfToday } },
+            { clockIn: { gte: startOfToday, lte: endOfToday } }
+          ],
           clockOut: null
         }
       }),
@@ -67,6 +72,7 @@ class DashboardService {
             select: {
               firstName: true,
               lastName: true,
+              employeeCode: true,
               designation: { select: { name: true } }
             }
           },
@@ -87,13 +93,14 @@ class DashboardService {
             select: {
               firstName: true,
               lastName: true,
+              employeeCode: true,
               department: { select: { name: true } }
             }
           },
           approvalLogs: {
             orderBy: { actedAt: 'desc' },
             take: 1,
-            include: { approver: { select: { firstName: true, lastName: true } } }
+            include: { approver: { select: { firstName: true, lastName: true, employeeCode: true } } }
           }
         }
       }),
@@ -107,16 +114,28 @@ class DashboardService {
           planExpiresAt: true,
           maxEmployees: true
         }
+      }),
+
+      // 9. Admin profile with employeeCode
+      this.prisma.employee.findFirst({
+        where: {
+          OR: [
+            ...(requestingUser.employeeId ? [{ id: requestingUser.employeeId }] : []),
+            ...(userId ? [{ userId }] : [])
+          ]
+        },
+        select: { id: true, firstName: true, lastName: true, employeeCode: true }
       })
     ]);
 
-    const absentToday = Math.max(0, totalEmployees - presentToday - onLeaveToday);
+    const yetToClockIn = Math.max(0, totalEmployees - presentToday - onLeaveToday);
 
     const formattedDepartmentBreakdown = departmentBreakdownRaw.map((d) => ({
       id: d.id,
       name: d.name,
       employeeCount: d.employees ? d.employees.length : 0,
       hod: d.hod ? `${d.hod.firstName} ${d.hod.lastName}` : null,
+      hodEmployeeCode: d.hod?.employeeCode || null,
       hodDesignation: d.hod?.designation?.name || null
     }));
 
@@ -126,13 +145,14 @@ class DashboardService {
       stats: {
         totalEmployees,
         presentToday,
-        absentToday,
         onLeaveToday,
+        yetToClockIn,
         pendingLeaves,
         pendingMyAction
       },
       departmentBreakdown: formattedDepartmentBreakdown,
       recentLeaves,
+      profile,
       subscription: subscription ? {
         ...subscription,
         employeeSlotsUsed: totalEmployees,
@@ -145,30 +165,46 @@ class DashboardService {
    *  METHOD 2: getManagerDashboard(requestingUser)
    * ════════════════════════════════════════════════════════════════════════ */
   async getManagerDashboard(requestingUser = {}) {
-    let managerId = requestingUser.employeeId || requestingUser.id;
+    const userId = requestingUser.sub || requestingUser.id || requestingUser.userId;
+    let managerEmp = null;
 
-    if (!managerId && requestingUser.sub) {
-      const emp = await this.prisma.employee.findFirst({
-        where: { userId: requestingUser.sub },
-        select: { id: true }
+    if (requestingUser.employeeId) {
+      managerEmp = await this.prisma.employee.findFirst({
+        where: { id: requestingUser.employeeId },
+        select: { id: true, employeeCode: true, departmentId: true, firstName: true, lastName: true }
       });
-      if (emp) managerId = emp.id;
     }
+
+    if (!managerEmp && userId) {
+      managerEmp = await this.prisma.employee.findFirst({
+        where: { userId },
+        select: { id: true, employeeCode: true, departmentId: true, firstName: true, lastName: true }
+      });
+    }
+
+    const managerId = managerEmp?.id || requestingUser.employeeId || '';
 
     const now = new Date();
     const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
     const endOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
     const today = now;
 
-    // Build team scope — direct reports OR dept members if HOD
+    // Check if manager is HOD of any department or has a department
     const department = managerId
-      ? await this.prisma.department.findFirst({ where: { hodId: managerId } })
+      ? await this.prisma.department.findFirst({
+          where: { OR: [{ hodId: managerId }, { id: managerEmp?.departmentId || '' }] }
+        })
       : null;
-    const isDeptHOD = !!department;
+    const isDeptHOD = department?.hodId === managerId;
 
-    const teamScope = isDeptHOD
-      ? { OR: [{ managerId }, { departmentId: department.id }] }
-      : { managerId: managerId || '' };
+    // Build comprehensive team scope: direct reports OR department members, excluding self
+    const teamConditions = [];
+    if (managerId) teamConditions.push({ managerId });
+    if (department?.id) teamConditions.push({ departmentId: department.id });
+
+    const teamScope = teamConditions.length > 0
+      ? { OR: teamConditions, ...(managerId ? { id: { not: managerId } } : {}) }
+      : { isActive: true };
 
     const [
       teamSize,
@@ -184,7 +220,10 @@ class DashboardService {
       this.prisma.attendance.count({
         where: {
           employee: teamScope,
-          date: { gte: startOfToday, lte: endOfToday },
+          OR: [
+            { date: { gte: startOfToday, lte: endOfToday } },
+            { clockIn: { gte: startOfToday, lte: endOfToday } }
+          ],
           clockOut: null
         }
       }),
@@ -199,16 +238,15 @@ class DashboardService {
         }
       }),
 
-      // 4. Leaves PENDING manager's action at L1
+      // 4. Leaves PENDING manager's action
       this.prisma.leave.findMany({
         where: {
-          employee: { managerId: managerId || '' },
-          status: 'PENDING',
-          currentApprovalLevel: 0
+          employee: teamScope,
+          status: { in: ['PENDING', 'L1_APPROVED'] }
         },
         include: {
           employee: {
-            select: { firstName: true, lastName: true, designation: { select: { name: true } } }
+            select: { firstName: true, lastName: true, employeeCode: true, designation: { select: { name: true } } }
           }
         },
         orderBy: { createdAt: 'asc' },
@@ -222,9 +260,16 @@ class DashboardService {
           id: true,
           firstName: true,
           lastName: true,
+          employeeCode: true,
           designation: { select: { name: true } },
           attendances: {
-            where: { date: { gte: startOfToday, lte: endOfToday } },
+            where: {
+              OR: [
+                { date: { gte: startOfToday, lte: endOfToday } },
+                { clockIn: { gte: startOfToday, lte: endOfToday } }
+              ]
+            },
+            orderBy: { clockIn: 'desc' },
             select: { clockIn: true, clockOut: true },
             take: 1
           },
@@ -241,7 +286,7 @@ class DashboardService {
       })
     ]);
 
-    // Compute each team member's status
+    // Compute each team member's status: ON_LEAVE, PRESENT, CLOCKED_OUT, or YET_TO_CLOCK_IN
     const teamWithStatus = teamAttendanceToday.map((emp) => {
       const approvedLeaves = emp.leaves || [];
       const attendances = emp.attendances || [];
@@ -251,12 +296,13 @@ class DashboardService {
         ? 'PRESENT'
         : attendances.length > 0 && attendances[0].clockOut
         ? 'CLOCKED_OUT'
-        : 'ABSENT';
+        : 'YET_TO_CLOCK_IN';
 
       return {
         id: emp.id,
         firstName: emp.firstName,
         lastName: emp.lastName,
+        employeeCode: emp.employeeCode,
         designation: emp.designation,
         attendances: emp.attendances,
         leaves: emp.leaves,
@@ -264,20 +310,21 @@ class DashboardService {
       };
     });
 
-    const absentToday = Math.max(0, teamSize - presentToday - onLeaveToday);
+    const yetToClockIn = Math.max(0, teamSize - presentToday - onLeaveToday);
 
     return {
       stats: {
         teamSize,
         presentToday,
         onLeaveToday,
-        absentToday,
+        yetToClockIn,
         leavesNeedingAction: leavesNeedingAction.length
       },
       teamLiveStatus: teamWithStatus,
       leavesNeedingAction,
       isHOD: isDeptHOD,
-      department: isDeptHOD ? { id: department.id, name: department.name } : null
+      profile: managerEmp ? { id: managerEmp.id, employeeCode: managerEmp.employeeCode, firstName: managerEmp.firstName, lastName: managerEmp.lastName } : null,
+      department: department ? { id: department.id, name: department.name } : null
     };
   }
 
@@ -285,11 +332,12 @@ class DashboardService {
    *  METHOD 3: getEmployeeDashboard(requestingUser)
    * ════════════════════════════════════════════════════════════════════════ */
   async getEmployeeDashboard(requestingUser = {}) {
-    let employeeId = requestingUser.employeeId || requestingUser.id;
+    const userId = requestingUser.sub || requestingUser.id || requestingUser.userId;
+    let employeeId = requestingUser.employeeId;
 
-    if (!employeeId && requestingUser.sub) {
+    if (!employeeId && userId) {
       const emp = await this.prisma.employee.findFirst({
-        where: { userId: requestingUser.sub },
+        where: { userId },
         select: { id: true }
       });
       if (emp) employeeId = emp.id;
@@ -303,6 +351,10 @@ class DashboardService {
     const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
     const endOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999));
 
+    const empQueryCondition = employeeId
+      ? { OR: [{ id: employeeId }, ...(userId ? [{ userId }] : [])] }
+      : { userId: userId || '' };
+
     const [
       todayAttendance,
       monthSummary,
@@ -313,8 +365,11 @@ class DashboardService {
       // 1. Today's active session
       this.prisma.attendance.findFirst({
         where: {
-          employeeId: employeeId || '',
-          date: { gte: startOfToday, lte: endOfToday },
+          employee: empQueryCondition,
+          OR: [
+            { date: { gte: startOfToday, lte: endOfToday } },
+            { clockIn: { gte: startOfToday, lte: endOfToday } }
+          ],
           clockOut: null
         },
         orderBy: { clockIn: 'desc' }
@@ -323,43 +378,62 @@ class DashboardService {
       // 2. This month's attendance count
       this.prisma.attendance.findMany({
         where: {
-          employeeId: employeeId || '',
-          date: { gte: startOfMonth, lte: endOfMonth }
+          employee: empQueryCondition,
+          OR: [
+            { date: { gte: startOfMonth, lte: endOfMonth } },
+            { clockIn: { gte: startOfMonth, lte: endOfMonth } }
+          ]
         },
         select: { date: true, clockIn: true, clockOut: true }
       }),
 
       // 3. Leave balances for all types
       this.prisma.leaveBalance.findMany({
-        where: { employeeId: employeeId || '', year: currentYear }
+        where: { employee: empQueryCondition, year: currentYear }
       }),
 
       // 4. Recent leave requests with approval chain
       this.prisma.leave.findMany({
-        where: { employeeId: employeeId || '' },
+        where: { employee: empQueryCondition },
         orderBy: { createdAt: 'desc' },
         take: 5,
         include: {
           approvalLogs: {
             orderBy: { actedAt: 'asc' },
             include: {
-              approver: { select: { firstName: true, lastName: true } }
+              approver: { select: { firstName: true, lastName: true, employeeCode: true } }
             }
           }
         }
       }),
 
-      // 5. Own profile with manager + dept + designation
+      // 5. Own profile with manager + HOD fallback + dept + designation
       this.prisma.employee.findFirst({
-        where: { id: employeeId || '' },
+        where: empQueryCondition,
         include: {
           user: { select: { email: true, role: true } },
-          department: { select: { id: true, name: true } },
+          department: {
+            select: {
+              id: true,
+              name: true,
+              hod: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  employeeCode: true,
+                  designation: { select: { name: true } }
+                }
+              }
+            }
+          },
           designation: { select: { id: true, name: true } },
           manager: {
             select: {
+              id: true,
               firstName: true,
               lastName: true,
+              employeeCode: true,
               designation: { select: { name: true } },
               department: { select: { name: true } }
             }
@@ -375,7 +449,7 @@ class DashboardService {
 
     // Calculate distinct days present this month
     const distinctDaysPresent = new Set(
-      monthSummary.map((a) => new Date(a.date).toISOString().slice(0, 10))
+      monthSummary.map((a) => new Date(a.date || a.clockIn).toISOString().slice(0, 10))
     ).size;
 
     // Calculate total hours worked this month
@@ -397,7 +471,7 @@ class DashboardService {
       }
     }
 
-    const daysAbsent = Math.max(0, workingDaysInMonth - distinctDaysPresent);
+    const yetToClockInDays = Math.max(0, workingDaysInMonth - distinctDaysPresent);
 
     return {
       today: {
@@ -408,7 +482,7 @@ class DashboardService {
       },
       monthStats: {
         daysPresent: distinctDaysPresent,
-        daysAbsent,
+        daysAbsent: yetToClockInDays,
         totalHoursWorked: parseFloat(calculatedHours.toFixed(2))
       },
       leaveBalances,

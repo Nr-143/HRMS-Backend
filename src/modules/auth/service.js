@@ -246,6 +246,7 @@ class AuthService {
         role: user.role,
         tenantId: user.tenantId,
         employeeId,
+        employeeCode: employee ? employee.employeeCode : null,
       },
     };
   }
