@@ -314,8 +314,10 @@ class EmployeeService {
       },
       orderBy: { lastName: 'asc' },
       include: {
+        user:        { select: { id: true, email: true, role: true } },
         department:  { select: { id: true, name: true } },
         designation: { select: { id: true, name: true } },
+        manager:     { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
       },
     });
 
