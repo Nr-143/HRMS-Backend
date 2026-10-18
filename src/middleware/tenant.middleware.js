@@ -19,7 +19,12 @@ export const tenantResolver = (req, res, next) => {
     return next();
   }
 
-  const tenantId = req.headers['x-tenant-id'];
+  let tenantId = req.headers['x-tenant-id'];
+
+  // Fallback to verified JWT tenant context if header is omitted
+  if (!tenantId && req.user?.tenantId) {
+    tenantId = req.user.tenantId;
+  }
 
   if (!tenantId) {
     return next(new BadRequestError('Tenant context is missing. Please provide the X-Tenant-ID header.'));
