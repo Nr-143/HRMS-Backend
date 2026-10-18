@@ -126,6 +126,40 @@ class ControlPanelService {
       },
     });
 
+    // Real-time synchronization: sync updated planned quotas to employee leave balances
+    const year = new Date().getFullYear();
+    const syncTasks = [];
+    if (data.casualLeaveQuota !== undefined) {
+      syncTasks.push(
+        this.prisma.leaveBalance.updateMany({
+          where: { tenantId, leaveType: 'CASUAL', year },
+          data: { totalDays: data.casualLeaveQuota },
+        })
+      );
+    }
+    if (data.sickLeaveQuota !== undefined) {
+      syncTasks.push(
+        this.prisma.leaveBalance.updateMany({
+          where: { tenantId, leaveType: 'SICK', year },
+          data: { totalDays: data.sickLeaveQuota },
+        })
+      );
+    }
+    if (data.earnedLeaveQuota !== undefined) {
+      syncTasks.push(
+        this.prisma.leaveBalance.updateMany({
+          where: { tenantId, leaveType: 'EARNED', year },
+          data: { totalDays: data.earnedLeaveQuota },
+        })
+      );
+    }
+
+    if (syncTasks.length > 0) {
+      await Promise.all(syncTasks);
+    }
+
+    // Invalidate cached leave balances for all employees in this workspace
+    await cache.delByPrefix('leave:balance', tenantId);
     await this.invalidateCache(tenantId);
     return this.getSettings(tenantId);
   }

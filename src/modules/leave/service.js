@@ -49,15 +49,23 @@ class LeaveService {
 
     // Step 4: Balance check
     const year    = start.getFullYear();
-    const balance = await this.prisma.leaveBalance.findFirst({
+    let balance = await this.prisma.leaveBalance.findFirst({
       where: { employeeId, leaveType, year },
     });
 
     if (!balance) {
+      // Auto-seed balances from Tenant quotas if missing
+      await this.getBalance(employeeId);
+      balance = await this.prisma.leaveBalance.findFirst({
+        where: { employeeId, leaveType, year },
+      });
+    }
+
+    if (!balance && leaveType !== 'UNPAID') {
       throw new NotFoundError(`No leave balance found for type ${leaveType} in year ${year}`);
     }
 
-    if (balance.usedDays + balance.pendingDays + requestedDays > balance.totalDays) {
+    if (leaveType !== 'UNPAID' && balance && (balance.usedDays + balance.pendingDays + requestedDays > balance.totalDays)) {
       throw new ValidationError(
         `Insufficient leave balance. Available: ${balance.totalDays - balance.usedDays - balance.pendingDays} days`
       );
@@ -510,27 +518,84 @@ class LeaveService {
   // ─── Balance ──────────────────────────────────────────────────────────────
 
   async getBalance(employeeId) {
-    const cacheKey = `leave:balance:${employeeId}`;
-    const cached   = await cache.get(cacheKey);
-    if (cached) return cached;
+    const { tenantId } = getContext() || {};
+    const year = new Date().getFullYear();
 
-    const year     = new Date().getFullYear();
-    const balances = await this.prisma.leaveBalance.findMany({
-      where: { employeeId, year },
-      orderBy: { leaveType: 'asc' },
-    });
+    if (employeeId) {
+      const cacheKey = `leave:balance:${employeeId}`;
+      const cached = await cache.get(cacheKey, tenantId);
+      if (cached) return cached;
 
-    const result = balances.map((b) => ({
-      leaveType:   b.leaveType,
-      totalDays:   b.totalDays,
-      usedDays:    b.usedDays,
-      pendingDays: b.pendingDays,
-      remaining:   b.totalDays - b.usedDays - b.pendingDays,
-      year:        b.year,
-    }));
+      let balances = await this.prisma.leaveBalance.findMany({
+        where: { employeeId, year },
+        orderBy: { leaveType: 'asc' },
+      });
 
-    await cache.set(cacheKey, result, 300);
-    return result;
+      // Auto-seed missing employee leave balances from Tenant quotas
+      if (!balances || balances.length === 0) {
+        const employee = await this.prisma.employee.findUnique({
+          where: { id: employeeId },
+          include: { tenant: true },
+        });
+
+        if (employee) {
+          const tenant = employee.tenant;
+          const seedData = [
+            { leaveType: 'CASUAL', totalDays: tenant?.casualLeaveQuota ?? 12 },
+            { leaveType: 'SICK',   totalDays: tenant?.sickLeaveQuota ?? 10 },
+            { leaveType: 'EARNED', totalDays: tenant?.earnedLeaveQuota ?? 15 },
+            { leaveType: 'UNPAID', totalDays: 0 },
+          ];
+
+          await this.prisma.$transaction(
+            seedData.map((s) =>
+              this.prisma.leaveBalance.create({
+                data: {
+                  employeeId,
+                  tenantId: employee.tenantId,
+                  leaveType: s.leaveType,
+                  year,
+                  totalDays: s.totalDays,
+                  usedDays: 0,
+                  pendingDays: 0,
+                },
+              })
+            )
+          );
+
+          balances = await this.prisma.leaveBalance.findMany({
+            where: { employeeId, year },
+            orderBy: { leaveType: 'asc' },
+          });
+        }
+      }
+
+      if (balances && balances.length > 0) {
+        const result = balances.map((b) => ({
+          leaveType:   b.leaveType,
+          totalDays:   b.totalDays,
+          usedDays:    b.usedDays,
+          pendingDays: b.pendingDays,
+          remaining:   b.totalDays - b.usedDays - b.pendingDays,
+          year:        b.year,
+        }));
+
+        await cache.set(cacheKey, result, 300, tenantId);
+        return result;
+      }
+    }
+
+    // Fallback if user has no employee profile yet: pull from Tenant settings
+    const tenant = tenantId
+      ? await this.prisma.tenant.findUnique({ where: { id: tenantId } })
+      : null;
+
+    return [
+      { leaveType: 'CASUAL', totalDays: tenant?.casualLeaveQuota ?? 12, usedDays: 0, pendingDays: 0, remaining: tenant?.casualLeaveQuota ?? 12, year },
+      { leaveType: 'SICK',   totalDays: tenant?.sickLeaveQuota ?? 10,   usedDays: 0, pendingDays: 0, remaining: tenant?.sickLeaveQuota ?? 10,   year },
+      { leaveType: 'EARNED', totalDays: tenant?.earnedLeaveQuota ?? 15, usedDays: 0, pendingDays: 0, remaining: tenant?.earnedLeaveQuota ?? 15, year },
+      { leaveType: 'UNPAID', totalDays: 0,                             usedDays: 0, pendingDays: 0, remaining: 0,                             year },
+    ];
   }
 }
 
