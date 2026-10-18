@@ -41,10 +41,10 @@ export const abilities = {
     designation:{ read: 'all',  write: 'all',  delete: 'none', approve: 'none' }
   },
   MANAGER: {
-    employee:   { read: 'team', write: 'none', delete: 'none', approve: 'none' },
-    leave:      { read: 'team', write: 'none', delete: 'none', approve: 'team' },
-    attendance: { read: 'team', write: 'none', delete: 'none', approve: 'none' },
-    payroll:    { read: 'none', write: 'none', delete: 'none', approve: 'none' },
+    employee:   { read: 'team', write: 'self', delete: 'none', approve: 'none' },
+    leave:      { read: 'team', write: 'self', delete: 'none', approve: 'team' },
+    attendance: { read: 'team', write: 'self', delete: 'none', approve: 'none' },
+    payroll:    { read: 'self', write: 'none', delete: 'none', approve: 'none' },
     department: { read: 'all',  write: 'none', delete: 'none', approve: 'none' },
     designation:{ read: 'all',  write: 'none', delete: 'none', approve: 'none' }
   },

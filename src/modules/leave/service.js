@@ -77,8 +77,8 @@ class LeaveService {
       include: { department: true },
     });
 
-    const hasManager  = !!employee?.managerId;
-    const hasHOD      = !!employee?.department?.hodId;
+    const hasManager  = !!employee?.managerId && employee.managerId !== employeeId;
+    const hasHOD      = !!employee?.department?.hodId && employee.department.hodId !== employeeId;
     const managerIsHOD = hasManager && hasHOD && employee.managerId === employee.department.hodId;
 
     let totalLevels;
@@ -159,6 +159,9 @@ class LeaveService {
       }
       approverLevel = leave.totalApprovalLevels;
     } else if (approverRole === 'MANAGER') {
+      if (leave.employeeId === approverId) {
+        throw new ForbiddenError('You cannot approve your own leave request');
+      }
       const isHOD     = leave.employee?.department?.hodId === approverId;
       const isManager = leave.employee?.managerId === approverId;
 
@@ -284,6 +287,9 @@ class LeaveService {
     if (['ADMIN', 'OWNER_ADMIN', 'SUPER_ADMIN', 'HR'].includes(approverRole)) {
       // HR / Admin can reject at any level
     } else if (approverRole === 'MANAGER') {
+      if (leave.employeeId === approverId) {
+        throw new ForbiddenError('You cannot reject your own leave request');
+      }
       const isHOD     = leave.employee?.department?.hodId === approverId;
       const isManager = leave.employee?.managerId === approverId;
       if (!isHOD && !isManager) {
@@ -361,13 +367,13 @@ class LeaveService {
       throw new BadRequestError(`Leave is already ${leave.status.toLowerCase()}`);
     }
 
-    const isEmployee = requestingRole === 'EMPLOYEE';
-    const isOwner    = leave.employeeId === requestingEmployeeId;
+    const isAdmin = ['ADMIN', 'OWNER_ADMIN', 'SUPER_ADMIN', 'HR'].includes(requestingRole);
+    const isOwner = leave.employeeId === requestingEmployeeId;
 
-    if (isEmployee) {
+    if (!isAdmin) {
       if (!isOwner) throw new ForbiddenError('You can only cancel your own leave requests');
       if (leave.status === 'APPROVED') {
-        throw new ForbiddenError('Employees cannot cancel approved leaves. Contact HR or Admin.');
+        throw new ForbiddenError('Cannot cancel approved leaves. Contact HR or Admin.');
       }
     }
 
@@ -474,8 +480,13 @@ class LeaveService {
     });
 
     const pendingForMe = leaves.filter((leave) => {
+      // Exclude own leaves from approval queue unless admin bypass
+      if (leave.employeeId === employeeId && !['ADMIN', 'OWNER_ADMIN', 'SUPER_ADMIN'].includes(role)) {
+        return false;
+      }
+
       const isManager = leave.employee?.managerId === employeeId;
-      const isHOD     = leave.employee?.department?.hodId === employeeId;
+      const isHOD     = leave.employee?.department?.hodId === employeeId && leave.employeeId !== employeeId;
       const isHR      = role === 'HR';
       const isAdmin   = ['ADMIN', 'OWNER_ADMIN', 'SUPER_ADMIN'].includes(role);
 
@@ -483,9 +494,9 @@ class LeaveService {
 
       // Level 0 (PENDING): Direct Manager if exists; else HOD if exists; else HR
       if (leave.currentApprovalLevel === 0) {
-        if (leave.employee?.managerId) {
+        if (leave.employee?.managerId && leave.employee.managerId !== leave.employeeId) {
           return isManager;
-        } else if (leave.employee?.department?.hodId) {
+        } else if (leave.employee?.department?.hodId && leave.employee.department.hodId !== leave.employeeId) {
           return isHOD;
         } else {
           return isHR;
@@ -496,6 +507,7 @@ class LeaveService {
       if (leave.currentApprovalLevel === 1) {
         if (
           leave.employee?.department?.hodId &&
+          leave.employee.department.hodId !== leave.employeeId &&
           leave.employee.department.hodId !== leave.employee.managerId
         ) {
           return isHOD;
