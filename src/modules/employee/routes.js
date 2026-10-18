@@ -43,6 +43,6 @@ router.patch('/:id/reactivate', validate(idParamSchema), authorize('employee', '
 
 // Dedicated reporting manager & audit history routes
 router.patch('/:id/reporting-manager', validate(updateReportingManagerSchema), allowRoles('SUPER_ADMIN', 'OWNER_ADMIN', 'ADMIN', 'HR'), updateReportingManager);
-router.get('/:id/reporting-history', validate(idParamSchema), allowRoles('SUPER_ADMIN', 'OWNER_ADMIN', 'ADMIN', 'HR'), getReportingHistory);
+router.get('/:id/reporting-history', validate(idParamSchema), allowRoles('SUPER_ADMIN', 'OWNER_ADMIN', 'ADMIN', 'HR', 'MANAGER'), getReportingHistory);
 
 export default router;
