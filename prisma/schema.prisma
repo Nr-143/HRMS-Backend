@@ -56,6 +56,24 @@ model Tenant {
   maxEmployees       Int                        @default(5)
   createdAt          DateTime                   @default(now())
   updatedAt          DateTime                   @updatedAt
+
+  // Workspace Settings & Governance
+  website            String?                    @default("")
+  timezone           String                     @default("America/New_York")
+  currency           String                     @default("USD")
+  weekStartsOn       String                     @default("Monday")
+  standardHoursPerDay Float                     @default(8.0)
+  workStartTime      String                     @default("09:00")
+  workEndTime        String                     @default("18:00")
+  requireGeofence    Boolean                    @default(false)
+  geofenceRadiusMeters Int                      @default(500)
+  defaultWorkMode    String                     @default("OFFICE")
+  casualLeaveQuota   Int                        @default(12)
+  sickLeaveQuota     Int                        @default(10)
+  earnedLeaveQuota   Int                        @default(15)
+  emailNotifications Boolean                    @default(true)
+  attendanceReminders Boolean                   @default(true)
+  slackWebhookUrl    String?
   users              User[]
   employees          Employee[]
   attendances        Attendance[]
