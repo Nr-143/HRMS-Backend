@@ -47,6 +47,7 @@ enum LeaveStatus {
 
 model Tenant {
   id                 String                     @id @default(uuid())
+  companyCode        String?                    @unique
   name               String
   domain             String?                    @unique
   subscriptionStatus SubscriptionStatus         @default(TRIAL)

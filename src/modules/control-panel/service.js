@@ -46,6 +46,7 @@ class ControlPanelService {
     const result = {
       settings: {
         id: tenant.id,
+        companyCode: tenant.companyCode || `CMP-1001`,
         name: tenant.name,
         domain: tenant.domain,
         website: tenant.website || '',

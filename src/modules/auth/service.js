@@ -23,8 +23,12 @@ class AuthService {
 
       // Perform transaction to onboard tenant, user, and employee atomically
       const result = await this.prisma.$transaction(async (tx) => {
+        const tenantCount = await tx.tenant.count();
+        const companyCode = `CMP-${String(tenantCount + 1001).padStart(4, '0')}`;
+
         const tenant = await tx.tenant.create({
           data: {
+            companyCode,
             name: companyName,
             domain: domain || null,
             subscriptionStatus: 'TRIAL',
@@ -125,6 +129,7 @@ class AuthService {
         refreshToken,
         tenant: {
           id: result.tenant.id,
+          companyCode: result.tenant.companyCode,
           name: result.tenant.name,
           domain: result.tenant.domain,
           subscriptionStatus: result.tenant.subscriptionStatus,
@@ -268,6 +273,7 @@ class AuthService {
         tenant: {
           select: {
             id: true,
+            companyCode: true,
             name: true,
             domain: true,
             subscriptionStatus: true,
