@@ -442,8 +442,8 @@ class AuthService {
     // Send email notification
     await sendMail({
       to: email,
-      subject: 'Password Reset OTP - HRMS',
-      text: `Your password reset OTP code is: ${otp}\nThis code is valid for 5 minutes. If you did not request this, please ignore this email.`,
+      subject: 'Password Reset OTP — Workly',
+      text: `Your password reset OTP code is: ${otp}\nThis code is valid for 5 minutes.\n\nWorkly — People Today, A Brighter Tomorrow\nIf you did not request this, please ignore this email.`,
     });
 
     return { email };
