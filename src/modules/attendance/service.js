@@ -51,7 +51,7 @@ class AttendanceService {
     this._emitLiveEvent('attendance:clockIn', {
       attendanceId: record.id,
       employeeId,
-      employeeName: `${employee.firstName} ${employee.lastName}`,
+      employeeName: [employee.firstName, employee.lastName].filter(Boolean).join(' '),
       employeeCode: employee.employeeCode,
       department:   employee.department?.name ?? null,
       clockIn:      record.clockIn,
@@ -98,7 +98,7 @@ class AttendanceService {
     this._emitLiveEvent('attendance:clockOut', {
       attendanceId: record.id,
       employeeId,
-      employeeName: employee ? `${employee.firstName} ${employee.lastName}` : null,
+      employeeName: employee ? [employee.firstName, employee.lastName].filter(Boolean).join(' ') : null,
       department:   employee?.department?.name ?? null,
       clockOut:     record.clockOut,
       latitude:     lat,

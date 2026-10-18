@@ -134,7 +134,7 @@ class DashboardService {
       id: d.id,
       name: d.name,
       employeeCount: d.employees ? d.employees.length : 0,
-      hod: d.hod ? `${d.hod.firstName} ${d.hod.lastName}` : null,
+      hod: d.hod ? [d.hod.firstName, d.hod.lastName].filter(Boolean).join(' ') : null,
       hodEmployeeCode: d.hod?.employeeCode || null,
       hodDesignation: d.hod?.designation?.name || null
     }));

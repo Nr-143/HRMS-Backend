@@ -55,10 +55,14 @@ class EmployeeService {
     if (!firstName && name) {
       const parts = name.trim().split(/\s+/);
       firstName = parts[0] || 'Employee';
-      lastName = parts.slice(1).join(' ') || parts[0] || 'User';
+      lastName = parts.slice(1).join(' ') || '';
     }
     if (!firstName) firstName = 'Employee';
-    if (!lastName) lastName = 'User';
+    if (!lastName) lastName = '';
+    // Prevent duplicating first name if client sent identical values or single-word name
+    if (lastName && firstName.trim().toLowerCase() === lastName.trim().toLowerCase()) {
+      lastName = '';
+    }
 
     // 2. Resolve Date of Joining
     const joiningDateStr = dateOfJoining || joinDate || new Date().toISOString();
